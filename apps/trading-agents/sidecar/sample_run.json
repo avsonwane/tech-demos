@@ -1,0 +1,110 @@
+{
+  "source": "illustrative-sample",
+  "label": "Illustrative sample transcript. Not produced by a live TradingAgents run. No LLM API key was available in the environment that built this demo.",
+  "ticker": "NVDA",
+  "as_of": "2026-11-13",
+  "provider": "xai",
+  "quick_model": "grok-4.6",
+  "deep_model": "grok-4.6",
+  "debate_rounds": 1,
+  "events": [
+    {
+      "id": "market",
+      "phase": "analyst",
+      "role": "market",
+      "title": "Market / technical",
+      "status": "complete",
+      "body": "Sample figures for this transcript, not a live quote.\n\nNVDA is treated as extended on a daily chart into the 2026-11-13 as-of date. The sample RSI is in the mid-70s and the MACD histogram is still positive, but smaller than the week before. Price sits above a rising 50-day average and well above the 200-day. The trend is constructive and late, not a fresh breakout."
+    },
+    {
+      "id": "social",
+      "phase": "analyst",
+      "role": "social",
+      "title": "Sentiment",
+      "status": "complete",
+      "body": "Sample sentiment, not a live scrape.\n\nThe illustrative feed is mixed-positive. The posts still talk about accelerator demand, and the skeptical ones are about valuation rather than a product miss. There is no sample signal of a positioning washout. The tone agrees with the trend and does not add a new fact."
+    },
+    {
+      "id": "news",
+      "phase": "analyst",
+      "role": "news",
+      "title": "News",
+      "status": "complete",
+      "body": "Sample headlines, not a live news pull.\n\nThe sample set has two company items, a supplier comment on data-center orders and a note that a large customer guided capital spending flat, plus a macro note that the rate path is unchanged. No FRED series is included here. Nothing in the set is a filing or a guidance change from the company itself."
+    },
+    {
+      "id": "fundamentals",
+      "phase": "analyst",
+      "role": "fundamentals",
+      "title": "Fundamentals",
+      "status": "complete",
+      "body": "Sample fundamentals, not a filing extract.\n\nThe illustrative picture is a highly profitable business whose revenue is still tied to a small set of cloud customers. Margins in the sample are high, inventory is not the story, and the multiple prices in several years of growth. Quality is not the objection. The price paid for that quality is."
+    },
+    {
+      "id": "debate-0",
+      "phase": "debate",
+      "role": "bull",
+      "title": "Bull researcher",
+      "status": "complete",
+      "body": "The trend and the business point the same way. Accelerators are still the scarce input in this sample, the technicals say the trend is intact, and a flat customer-spending headline is one quarter rather than a canceled architecture. Paying up for a scarce supplier has been the right error more often than fading it. I would paper-buy a starter, not chase a full position."
+    },
+    {
+      "id": "debate-1",
+      "phase": "debate",
+      "role": "bear",
+      "title": "Bear researcher",
+      "status": "complete",
+      "body": "A starter buy is how a stretched chart gets defended. The sample RSI is already elevated, the customer set is concentrated, and flat capital spending is the first sentence of a slower order book. High margins cut both ways: there is more multiple to lose than operations to fix. One round of sample evidence has no margin of safety. I would not paper-buy here."
+    },
+    {
+      "id": "investment-plan",
+      "phase": "plan",
+      "role": "manager",
+      "title": "Research manager",
+      "status": "complete",
+      "body": "Both sides are using the same sample facts. The bull is right that the trend and the product position agree. The bear is right that the entry is late and the customer set is narrow. One debate round is not enough to prefer a buy. Plan: hold. Revisit if the sample trend breaks, or if the customer-spending note becomes a real guide-down.\n\nRating: Hold"
+    },
+    {
+      "id": "trader",
+      "phase": "trader",
+      "role": "trader",
+      "title": "Trader",
+      "status": "complete",
+      "body": "Proposal: Hold. No paper entry and no paper exit. The research plan does not give a level that pays for the concentration risk, and the technical stretch argues against adding. I will not manufacture a buy to match the long-term story."
+    },
+    {
+      "id": "risk-0",
+      "phase": "risk",
+      "role": "aggressive",
+      "title": "Aggressive risk",
+      "status": "complete",
+      "body": "Hold is the timid reading of this sample. The scarce-supply story is the whole position. A starter buy has a defined downside if the sample 50-day average fails, and the upside is still the buildout. I would rather own a small paper position than watch a trend we already called constructive."
+    },
+    {
+      "id": "risk-1",
+      "phase": "risk",
+      "role": "conservative",
+      "title": "Conservative risk",
+      "status": "complete",
+      "body": "A starter is how a hold becomes an accidental buy. Concentration plus a stretched oscillator is a reason to do nothing, not a reason to nibble. If the customer-spending headline is noise, the price will still be there after a second look. I back the trader's hold."
+    },
+    {
+      "id": "risk-2",
+      "phase": "risk",
+      "role": "neutral",
+      "title": "Neutral risk",
+      "status": "complete",
+      "body": "The aggressive case depends on the buildout staying scarce, which this one-round sample cannot settle. The conservative case is mostly about entry, and entry is the part the chart actually speaks to. With the evidence in hand, hold is the position that does not pretend the debate resolved the business. I side with hold."
+    },
+    {
+      "id": "decision",
+      "phase": "decision",
+      "role": "portfolio",
+      "title": "Portfolio decision",
+      "status": "complete",
+      "action": "HOLD",
+      "rating": "Hold",
+      "body": "Rating: Hold\n\nPaper decision: hold NVDA. The analyst stack describes a strong trend and a strong, concentrated business. The bull wants a starter, the bear wants to stand aside, and the risk team does not have a second round that would justify overriding the trader. The portfolio manager accepts the hold.\n\nNo order is sent. This transcript is illustrative and is not financial advice."
+    }
+  ]
+}

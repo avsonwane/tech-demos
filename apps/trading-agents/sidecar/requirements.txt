@@ -1,0 +1,7 @@
+# TradingAgents is not published on PyPI. Pin the commit this demo was
+# written against (v0.7.1 tree, README follow-up 9fa1196).
+tradingagents @ git+https://github.com/TauricResearch/TradingAgents.git@9fa1196fffbcfd9de5146d2dd2869df84ab99838
+
+fastapi>=0.115.0
+uvicorn>=0.32.0
+pytest>=8.3.0
