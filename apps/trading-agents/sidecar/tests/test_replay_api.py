@@ -14,6 +14,21 @@ def test_health_lists_providers_without_secrets():
     ids = [provider["id"] for provider in body["providers"]]
     assert ids[:2] == ["xai", "openai"]
     assert all(isinstance(provider["key_set"], bool) for provider in body["providers"])
+    anthropic = next(provider for provider in body["providers"] if provider["id"] == "anthropic")
+    assert [model["id"] for model in anthropic["quick"]] == [
+        "claude-haiku-5-5",
+        "claude-sonnet-5-5",
+        "claude-sonnet-5",
+        "claude-haiku-4-5",
+    ]
+    assert [model["id"] for model in anthropic["deep"]] == [
+        "claude-fable-5-2",
+        "claude-opus-5-5",
+        "claude-fable-5-1",
+        "claude-sonnet-5-5",
+    ]
+    assert anthropic["quick_default"] == "claude-sonnet-5-5"
+    assert anthropic["deep_default"] == "claude-opus-5-5"
     assert body["sample"]["source"] == "illustrative-sample"
 
 

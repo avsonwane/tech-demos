@@ -35,7 +35,7 @@ Copy `.env.example` to `.env`. Live runs need the key for the provider you pick:
 
 - `XAI_API_KEY` — xAI / Grok. The form defaults here (`grok-4.6` for both the quick and deep tiers).
 - `OPENAI_API_KEY` — OpenAI. Quick default `gpt-6-luna`, deep default `gpt-6-sol`, matching the library.
-- `ANTHROPIC_API_KEY` — Anthropic. Unscoped keys also need optional `ANTHROPIC_WORKSPACE_ID`. TradingAgents' Anthropic client does not forward `default_headers`, so the sidecar sends `anthropic-workspace-id` when that variable is set.
+- `ANTHROPIC_API_KEY` — Anthropic. Quick default `claude-sonnet-5-5`, deep default `claude-opus-5-5`. The form lists the models confirmed from Anthropic's `/v1/models` endpoint. Unscoped keys also need optional `ANTHROPIC_WORKSPACE_ID`. TradingAgents' Anthropic client does not forward `default_headers`, so the sidecar sends `anthropic-workspace-id` when that variable is set.
 - `GOOGLE_API_KEY`
 
 Market data stays on the library default: Yahoo Finance for prices, indicators, and news; SEC EDGAR then Yahoo for statements; Polymarket with no key; FRED for macro. FRED is skipped, with an unavailable note inside the news work, when `FRED_API_KEY` is unset. Alpha Vantage is not on the vendor chain. Do not commit `.env`.

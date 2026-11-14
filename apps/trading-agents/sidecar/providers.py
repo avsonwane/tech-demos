@@ -1,6 +1,7 @@
 """LLM providers this desk exposes.
 
-Model ids match TradingAgents' catalog at the pinned commit. The library
+Most model ids match TradingAgents' catalog at the pinned commit. Anthropic's
+list is the models returned by the live ``/v1/models`` endpoint. The library
 default provider is OpenAI; this desk lists xAI first and defaults the form
 to Grok 4.6.
 """
@@ -44,15 +45,18 @@ PROVIDERS: dict[str, dict] = {
         "label": "Anthropic",
         "env": "ANTHROPIC_API_KEY",
         "quick": [
+            ("Claude Haiku 5.5", "claude-haiku-5-5"),
+            ("Claude Sonnet 5.5", "claude-sonnet-5-5"),
             ("Claude Sonnet 5", "claude-sonnet-5"),
             ("Claude Haiku 4.5", "claude-haiku-4-5"),
         ],
         "deep": [
+            ("Claude Fable 5.2", "claude-fable-5-2"),
             ("Claude Opus 5.5", "claude-opus-5-5"),
             ("Claude Fable 5.1", "claude-fable-5-1"),
-            ("Claude Sonnet 5", "claude-sonnet-5"),
+            ("Claude Sonnet 5.5", "claude-sonnet-5-5"),
         ],
-        "quick_default": "claude-sonnet-5",
+        "quick_default": "claude-sonnet-5-5",
         "deep_default": "claude-opus-5-5",
     },
     "google": {
