@@ -5,3 +5,6 @@ tradingagents @ git+https://github.com/TauricResearch/TradingAgents.git@9fa1196f
 fastapi>=0.115.0
 uvicorn>=0.32.0
 pytest>=8.3.0
+# Technical summary via TradingView's screener scan. Same library
+# tradingview-mcp-server uses. Not a chart websocket client.
+tradingview-ta>=3.3.0

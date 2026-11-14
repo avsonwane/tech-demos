@@ -7,8 +7,14 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { fetchHealth, streamRun } from "./api"
+import { SourcesPanel } from "./SourcesPanel"
 import { Timeline } from "./Timeline"
-import type { Health, ProviderInfo, RunMeta, RunRequest, Stage } from "./types"
+import type { Health, ProviderInfo, RunMeta, RunRequest, SourceRow, Stage } from "./types"
+
+function isIndiaSymbol(value: string): boolean {
+  const symbol = value.trim().toUpperCase()
+  return symbol.endsWith(".NS") || symbol.endsWith(".BO") || symbol === "^NSEI" || symbol === "^BSESN" || symbol === "^NSEBANK"
+}
 
 function todayLocal(): string {
   const now = new Date()
@@ -30,11 +36,14 @@ export function DeskApp() {
   const [quickModel, setQuickModel] = useState("grok-4.6")
   const [deepModel, setDeepModel] = useState("grok-4.6")
   const [rounds, setRounds] = useState("1")
+  const [indiaMode, setIndiaMode] = useState(false)
   const [status, setStatus] = useState<"idle" | "running" | "done" | "error">("idle")
   const [meta, setMeta] = useState<RunMeta | null>(null)
   const [stages, setStages] = useState<Record<string, Stage>>({})
+  const [sources, setSources] = useState<SourceRow[]>([])
   const [error, setError] = useState<string | null>(null)
-  const bottomRef = useRef<HTMLDivElement>(null)
+  const detectedIndia = isIndiaSymbol(ticker)
+  const detectedRef = useRef(detectedIndia)
   const abortRef = useRef<AbortController | null>(null)
 
   useEffect(() => {
@@ -60,9 +69,15 @@ export function DeskApp() {
   }, [])
 
   useEffect(() => {
-    if (status !== "running" && status !== "done") return
-    bottomRef.current?.scrollIntoView({ behavior: "smooth", block: "end" })
-  }, [stages, status])
+    if (detectedRef.current === detectedIndia) return
+    detectedRef.current = detectedIndia
+    setIndiaMode(detectedIndia)
+  }, [detectedIndia])
+
+  useEffect(() => {
+    if (sources.length === 0) return
+    document.getElementById("data-sources")?.scrollIntoView({ behavior: "smooth", block: "start" })
+  }, [sources])
 
   const provider: ProviderInfo | undefined = useMemo(
     () => health?.providers.find((item) => item.id === providerId),
@@ -84,6 +99,7 @@ export function DeskApp() {
     setStatus("running")
     setMeta(null)
     setStages({})
+    setSources([])
     setError(null)
     const body: RunRequest = {
       ticker: ticker.trim(),
@@ -93,6 +109,7 @@ export function DeskApp() {
       deep_model: deepModel,
       debate_rounds: Number(rounds),
       mode,
+      india_mode: indiaMode,
     }
     try {
       await streamRun(
@@ -100,6 +117,10 @@ export function DeskApp() {
         (message) => {
           if (message.event === "meta") {
             setMeta(message.data)
+            return
+          }
+          if (message.event === "sources") {
+            setSources(message.data.sources)
             return
           }
           if (message.event === "stage") {
@@ -212,6 +233,35 @@ export function DeskApp() {
                 </SelectContent>
               </Select>
             </div>
+            <div className="flex items-center justify-between gap-4 sm:col-span-2">
+              <div className="grid gap-1">
+                <Label htmlFor="india-mode">India mode</Label>
+                <p className="text-sm text-muted-foreground">
+                  Turns on for .NS, .BO, ^NSEI, ^BSESN, and ^NSEBANK. Prices in ₹.
+                </p>
+              </div>
+              <button
+                id="india-mode"
+                type="button"
+                role="switch"
+                aria-checked={indiaMode}
+                disabled={running}
+                onClick={() => setIndiaMode((value) => !value)}
+                className={
+                  indiaMode
+                    ? "relative h-6 w-11 shrink-0 border border-foreground bg-foreground"
+                    : "relative h-6 w-11 shrink-0 border border-foreground/30 bg-transparent"
+                }
+              >
+                <span
+                  className={
+                    indiaMode
+                      ? "absolute top-0.5 left-5 size-4 bg-background"
+                      : "absolute top-0.5 left-0.5 size-4 bg-foreground/40"
+                  }
+                />
+              </button>
+            </div>
             <div className="grid gap-2">
               <Label htmlFor="deep-model">Deep model</Label>
               <Select value={deepModel} onValueChange={setDeepModel} disabled={running || !provider}>
@@ -243,9 +293,9 @@ export function DeskApp() {
       </Card>
 
       <p className="mt-4 text-sm text-muted-foreground">
-        Prices, indicators, news, and filings use Yahoo Finance and SEC EDGAR. FRED macro data is skipped when
-        FRED_API_KEY is unset. Alpha Vantage is not used. One rounds value sets both the research debate and the
-        risk team.
+        {indiaMode
+          ? "India mode keeps Yahoo Finance prices and adds Screener.in, Indian market RSS, NSE JSON when it answers, and an optional TradingView technical summary. StockTwits, Reddit, SEC EDGAR, and FRED are skipped. Prices are in ₹."
+          : "Prices, indicators, news, and filings use Yahoo Finance and SEC EDGAR. FRED macro data is skipped when FRED_API_KEY is unset. Alpha Vantage is not used. One rounds value sets both the research debate and the risk team."}
       </p>
       {healthError ? <p className="mt-3 text-sm text-destructive">{healthError}</p> : null}
 
@@ -260,6 +310,8 @@ export function DeskApp() {
       {meta ? (
         <div className="mt-8 flex flex-wrap items-center gap-x-3 gap-y-1 text-sm">
           <Badge>{meta.mode === "replay" ? "Sample" : "Live"}</Badge>
+          {meta.india_mode ? <Badge variant="secondary">India</Badge> : null}
+          {meta.currency === "INR" ? <Badge>Prices in ₹</Badge> : null}
           <span>
             {meta.ticker} · {meta.as_of} · {providerLabel(health, meta.provider)} {meta.quick_model} / {meta.deep_model} ·{" "}
             {meta.debate_rounds} {meta.debate_rounds === 1 ? "round" : "rounds"}
@@ -269,6 +321,8 @@ export function DeskApp() {
 
       {error ? <p className="mt-4 text-sm text-destructive">{error}</p> : null}
 
+      <SourcesPanel sources={sources} />
+
       {status === "idle" && stageCount === 0 ? (
         <p className="mt-10 text-sm text-muted-foreground">
           The timeline fills as each analyst, debate turn, and the paper decision arrives.
@@ -276,7 +330,6 @@ export function DeskApp() {
       ) : null}
 
       {status !== "idle" || stageCount > 0 ? <Timeline stages={stages} running={running} /> : null}
-      <div ref={bottomRef} />
 
       <Separator className="my-10" />
       <footer className="grid gap-2 text-sm text-muted-foreground">

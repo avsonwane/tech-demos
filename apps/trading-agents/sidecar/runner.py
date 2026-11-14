@@ -53,7 +53,17 @@ def _install_anthropic_workspace_header() -> None:
     _ANTHROPIC_WORKSPACE_PATCHED = True
 
 
-def live_events(ticker: str, as_of: str, provider: str, quick_model: str, deep_model: str, debate_rounds: int):
+def live_events(
+    ticker: str,
+    as_of: str,
+    provider: str,
+    quick_model: str,
+    deep_model: str,
+    debate_rounds: int,
+    *,
+    india_mode: bool = False,
+    bundle=None,
+):
     from tradingagents.agents.rating import run_rating
     from tradingagents.default_config import DEFAULT_CONFIG
     from tradingagents.graph.trading_graph import TradingAgentsGraph
@@ -74,27 +84,50 @@ def live_events(ticker: str, as_of: str, provider: str, quick_model: str, deep_m
     config["max_risk_discuss_rounds"] = debate_rounds
     config["checkpoint_enabled"] = False
 
-    asset_type = "crypto" if ticker.endswith("-USD") else "stock"
-    graph = TradingAgentsGraph(
-        selected_analysts=["market", "social", "news", "fundamentals"],
-        debug=False,
-        config=config,
-    )
-    init_state = graph.create_run_state(ticker, as_of, asset_type=asset_type)
-    args = graph.propagator.get_graph_args()
-    state: dict = {}
-    for _messages, chunk in graph.stream_run(init_state, **args):
-        if not chunk:
-            continue
-        rating = None
-        if chunk.get("final_trade_decision") or chunk.get("final_rating"):
-            preview = {**state, **{key: value for key, value in chunk.items() if key != "messages"}}
-            rating = run_rating(preview)
-        events = diff_chunk(state, chunk, rating=rating)
-        absorb(state, chunk)
-        yield from events
-    if state.get("final_trade_decision"):
-        graph.record_decision(ticker, as_of, state)
+    token = None
+    if india_mode:
+        from india.bundle import bind_bundle, collect
+        from india.vendor import apply_india_config, install_india_hooks
+
+        install_india_hooks()
+        apply_india_config(config)
+        if bundle is None:
+            bundle = collect(ticker, as_of)
+        token = bind_bundle(bundle)
+
+    try:
+        asset_type = "crypto" if ticker.endswith("-USD") else "stock"
+        graph = TradingAgentsGraph(
+            selected_analysts=["market", "social", "news", "fundamentals"],
+            debug=False,
+            config=config,
+        )
+        init_state = graph.create_run_state(ticker, as_of, asset_type=asset_type)
+        if bundle is not None:
+            prior = init_state.get("instrument_context") or ""
+            extra = bundle.prompt_context
+            if bundle.tradingview_text:
+                extra = f"{extra}\n\n{bundle.tradingview_text}"
+            init_state["instrument_context"] = f"{prior}\n\n{extra}"
+        args = graph.propagator.get_graph_args()
+        state: dict = {}
+        for _messages, chunk in graph.stream_run(init_state, **args):
+            if not chunk:
+                continue
+            rating = None
+            if chunk.get("final_trade_decision") or chunk.get("final_rating"):
+                preview = {**state, **{key: value for key, value in chunk.items() if key != "messages"}}
+                rating = run_rating(preview)
+            events = diff_chunk(state, chunk, rating=rating)
+            absorb(state, chunk)
+            yield from events
+        if state.get("final_trade_decision"):
+            graph.record_decision(ticker, as_of, state)
+    finally:
+        if token is not None:
+            from india.bundle import reset_bundle
+
+            reset_bundle(token)
 
 
 def key_is_set(env_name: str) -> bool:
