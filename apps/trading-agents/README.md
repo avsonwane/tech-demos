@@ -8,6 +8,15 @@ Nothing here places an order. The page says so: research and simulation only, no
 - Paper: https://arxiv.org/abs/2412.20138
 - Bookmark: https://x.com/gusik4ever/status/2119044302319853924
 
+## Prerequisites
+
+On macOS, install Bun and uv. TradingAgents needs Python 3.11 or newer; `bun run dev` asks uv for Python 3.13.
+
+```bash
+curl -fsSL https://bun.sh/install | bash
+curl -LsSf https://astral.sh/uv/install.sh | sh
+```
+
 ## Run
 
 From this directory:
@@ -26,7 +35,7 @@ Copy `.env.example` to `.env`. Live runs need the key for the provider you pick:
 
 - `XAI_API_KEY` — xAI / Grok. The form defaults here (`grok-4.6` for both the quick and deep tiers).
 - `OPENAI_API_KEY` — OpenAI. Quick default `gpt-6-luna`, deep default `gpt-6-sol`, matching the library.
-- `ANTHROPIC_API_KEY`
+- `ANTHROPIC_API_KEY` — Anthropic. Unscoped keys also need optional `ANTHROPIC_WORKSPACE_ID`. TradingAgents' Anthropic client does not forward `default_headers`, so the sidecar sends `anthropic-workspace-id` when that variable is set.
 - `GOOGLE_API_KEY`
 
 Market data stays on the library default: Yahoo Finance for prices, indicators, and news; SEC EDGAR then Yahoo for statements; Polymarket with no key; FRED for macro. FRED is skipped, with an unavailable note inside the news work, when `FRED_API_KEY` is unset. Alpha Vantage is not on the vendor chain. Do not commit `.env`.

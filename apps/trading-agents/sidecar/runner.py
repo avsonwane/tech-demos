@@ -17,11 +17,48 @@ from stages import absorb, diff_chunk
 SIDECAR = Path(__file__).resolve().parent
 RUN_DATA = SIDECAR / ".run-data"
 
+_ANTHROPIC_WORKSPACE_PATCHED = False
+
+
+def _install_anthropic_workspace_header() -> None:
+    """Send ``ANTHROPIC_WORKSPACE_ID`` on every Anthropic request, if set.
+
+    Unscoped Anthropic API keys require the ``anthropic-workspace-id`` header.
+    TradingAgents' Anthropic client only forwards a fixed kwargs list and does
+    not include ``default_headers``, so this adds that passthrough and injects
+    the header before ``ChatAnthropic`` is built.
+    """
+    global _ANTHROPIC_WORKSPACE_PATCHED
+    if _ANTHROPIC_WORKSPACE_PATCHED:
+        return
+
+    workspace_id = os.environ.get("ANTHROPIC_WORKSPACE_ID", "").strip()
+    if not workspace_id:
+        return
+
+    from tradingagents.llm_clients import anthropic_client as ac
+
+    if "default_headers" not in ac._PASSTHROUGH_KWARGS:
+        ac._PASSTHROUGH_KWARGS = (*ac._PASSTHROUGH_KWARGS, "default_headers")
+
+    original_get_llm = ac.AnthropicClient.get_llm
+
+    def get_llm(self):
+        headers = dict(self.kwargs.get("default_headers") or {})
+        headers.setdefault("anthropic-workspace-id", workspace_id)
+        self.kwargs["default_headers"] = headers
+        return original_get_llm(self)
+
+    ac.AnthropicClient.get_llm = get_llm  # type: ignore[method-assign]
+    _ANTHROPIC_WORKSPACE_PATCHED = True
+
 
 def live_events(ticker: str, as_of: str, provider: str, quick_model: str, deep_model: str, debate_rounds: int):
     from tradingagents.agents.rating import run_rating
     from tradingagents.default_config import DEFAULT_CONFIG
     from tradingagents.graph.trading_graph import TradingAgentsGraph
+
+    _install_anthropic_workspace_header()
 
     config = copy.deepcopy(DEFAULT_CONFIG)
     config["results_dir"] = str(RUN_DATA / "logs")
