@@ -1,0 +1,66 @@
+export type ModelOption = {
+  id: string
+  label: string
+}
+
+export type ProviderInfo = {
+  id: string
+  label: string
+  env: string
+  key_set: boolean
+  quick: ModelOption[]
+  deep: ModelOption[]
+  quick_default: string
+  deep_default: string
+}
+
+export type Health = {
+  ok: boolean
+  advice: string
+  providers: ProviderInfo[]
+  sample: {
+    ticker: string
+    as_of: string
+    label: string
+    source: string
+  }
+}
+
+export type Stage = {
+  id: string
+  phase: "analyst" | "debate" | "plan" | "trader" | "risk" | "decision"
+  role: string
+  title: string
+  body: string
+  status: "complete" | "skipped"
+  action?: "BUY" | "HOLD" | "SELL" | "REVIEW"
+  rating?: string
+}
+
+export type RunMeta = {
+  mode: "live" | "replay"
+  banner: string | null
+  reason: string | null
+  ticker: string
+  as_of: string
+  provider: string
+  quick_model: string
+  deep_model: string
+  debate_rounds: number
+}
+
+export type RunRequest = {
+  ticker: string
+  as_of: string
+  provider: string
+  quick_model: string
+  deep_model: string
+  debate_rounds: number
+  mode: "auto" | "replay"
+}
+
+export type SseMessage =
+  | { event: "meta"; data: RunMeta }
+  | { event: "stage"; data: Stage }
+  | { event: "done"; data: { mode: string } }
+  | { event: "error"; data: { message: string } }
