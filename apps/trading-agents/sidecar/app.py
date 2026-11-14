@@ -23,6 +23,7 @@ SIDECAR = Path(__file__).resolve().parent
 load_dotenv(SIDECAR.parent / ".env", override=False)
 
 SAMPLE_PATH = SIDECAR / "sample_run.json"
+INDIA_SAMPLE_PATH = SIDECAR / "sample_run_india.json"
 TICKER_RE_TEXT = r"^[A-Za-z0-9._\-\^=+]{1,32}$"
 
 app = FastAPI(title="TradingAgents desk")
@@ -37,10 +38,12 @@ class RunIn(BaseModel):
     deep_model: str = "grok-4.6"
     debate_rounds: int = Field(default=1, ge=1, le=3)
     mode: str = "auto"
+    india_mode: bool = False
 
 
-def _sample() -> dict:
-    return json.loads(SAMPLE_PATH.read_text(encoding="utf-8"))
+def _sample(india: bool = False) -> dict:
+    path = INDIA_SAMPLE_PATH if india else SAMPLE_PATH
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def _provider_payload() -> list[dict]:
@@ -121,6 +124,7 @@ def _prepare(body: RunIn) -> dict:
         "quick_model": body.quick_model,
         "deep_model": body.deep_model,
         "debate_rounds": body.debate_rounds,
+        "india_mode": body.india_mode,
     }
 
 
@@ -128,38 +132,57 @@ def _sse(event: str, payload: dict) -> str:
     return f"event: {event}\ndata: {json.dumps(payload, ensure_ascii=False)}\n\n"
 
 
+def _currency(india_mode: bool, ticker: str) -> str:
+    from india.detect import quotes_in_inr
+
+    if india_mode and quotes_in_inr(ticker):
+        return "INR"
+    return "USD"
+
+
 def _meta(prepared: dict, sample: dict | None) -> dict:
     if prepared["replay"]:
         assert sample is not None
+        ticker = sample["ticker"]
+        india_mode = bool(prepared["india_mode"])
         return {
             "mode": "replay",
             "banner": sample["label"],
             "reason": prepared["reason"],
-            "ticker": sample["ticker"],
+            "ticker": ticker,
             "as_of": sample["as_of"],
             "provider": sample["provider"],
             "quick_model": sample["quick_model"],
             "deep_model": sample["deep_model"],
             "debate_rounds": sample["debate_rounds"],
+            "india_mode": india_mode,
+            "currency": _currency(india_mode, ticker),
         }
+    ticker = prepared["ticker"]
+    india_mode = bool(prepared["india_mode"])
     return {
         "mode": "live",
         "banner": None,
         "reason": None,
-        "ticker": prepared["ticker"],
+        "ticker": ticker,
         "as_of": prepared["as_of"],
         "provider": prepared["provider"],
         "quick_model": prepared["quick_model"],
         "deep_model": prepared["deep_model"],
         "debate_rounds": prepared["debate_rounds"],
+        "india_mode": india_mode,
+        "currency": _currency(india_mode, ticker),
     }
 
 
 def _iterate(prepared: dict):
-    sample = _sample() if prepared["replay"] else None
+    sample = _sample(prepared["india_mode"]) if prepared["replay"] else None
     yield "meta", _meta(prepared, sample)
     if prepared["replay"]:
         assert sample is not None
+        sources = sample.get("sources")
+        if sources:
+            yield "sources", {"sources": sources}
         delay = float(os.environ.get("TRADING_AGENTS_REPLAY_DELAY", "0.75"))
         for event in sample["events"]:
             if delay > 0:
@@ -170,10 +193,18 @@ def _iterate(prepared: dict):
 
     from runner import live_events
 
+    bundle = None
+    if prepared["india_mode"]:
+        from india.bundle import collect
+
+        print(f"India sources {prepared['ticker']} {prepared['as_of']}", flush=True)
+        bundle = collect(prepared["ticker"], prepared["as_of"])
+        yield "sources", {"sources": bundle.public_sources()}
+
     print(
         f"Live run {prepared['ticker']} {prepared['as_of']} "
         f"{prepared['provider']} {prepared['quick_model']}/{prepared['deep_model']} "
-        f"rounds={prepared['debate_rounds']}",
+        f"rounds={prepared['debate_rounds']} india={prepared['india_mode']}",
         flush=True,
     )
     for event in live_events(
@@ -183,6 +214,8 @@ def _iterate(prepared: dict):
         prepared["quick_model"],
         prepared["deep_model"],
         prepared["debate_rounds"],
+        india_mode=prepared["india_mode"],
+        bundle=bundle,
     ):
         print(f"stage {event['id']}", flush=True)
         yield "stage", event
