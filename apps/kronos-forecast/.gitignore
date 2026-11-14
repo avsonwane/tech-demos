@@ -1,0 +1,7 @@
+.venv
+sidecar/.venv
+sidecar/.cache
+__pycache__
+.pytest_cache
+*.py[cod]
+.python-version

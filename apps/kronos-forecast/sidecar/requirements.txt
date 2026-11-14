@@ -1,0 +1,15 @@
+# CPU torch is installed first from https://download.pytorch.org/whl/cpu
+# (see scripts/dev.ts). It is intentionally not listed here so pip does not
+# pull the default CUDA wheel.
+
+fastapi>=0.115.0
+uvicorn>=0.32.0
+pandas>=2.2.2
+numpy>=1.26.0
+einops==0.8.1
+huggingface_hub>=0.26.0,<1
+safetensors>=0.4.0
+tqdm>=4.67.0
+httpx>=0.27.0
+yfinance>=0.2.50
+pytest>=8.3.0
