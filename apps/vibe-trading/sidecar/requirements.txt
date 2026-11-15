@@ -1,0 +1,11 @@
+# PyPI release this desk was written against. MIT.
+# The anthropic extra installs langchain-anthropic, which the native
+# Messages API adapter imports. OpenAI and the xAI mapping use the
+# OpenAI-compatible client in the base package.
+vibe-trading-ai[anthropic]==0.1.19
+
+fastapi>=0.115.0
+uvicorn>=0.32.0
+httpx>=0.28.0
+pytest>=8.3.0
+python-dotenv>=1.0.0
