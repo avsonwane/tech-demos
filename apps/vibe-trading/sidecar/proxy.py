@@ -14,7 +14,7 @@ from typing import Any, Iterator
 import httpx
 
 from events import TERMINAL_EVENTS, apply_event, empty_state, parse_sse
-from results import parse_run
+from results import resolve_result
 
 SERVE_URL = "http://127.0.0.1:8899"
 
@@ -129,4 +129,4 @@ def drive_live(client: VibeClient, prompt: str) -> Iterator[tuple[str, dict[str,
         raise RuntimeError("The session ended without a backtest run id.")
     payload = client.get_run(run_id)
     code = client.get_code(run_id)
-    yield "result", parse_run(payload, code)
+    yield "result", resolve_result(payload, code)

@@ -78,3 +78,26 @@ def test_failed_attempt_keeps_the_error_and_preview_run_id():
     assert state["run_id"] == "run-partial"
     assert state["error"] == "model timeout"
     assert state["terminal"] == "attempt.failed"
+    assert state["phases"]["ground"]["status"] == "skipped"
+    assert state["phases"]["plan"]["status"] == "skipped"
+    assert state["phases"]["code"]["status"] == "skipped"
+
+
+def test_terminal_run_resolves_ground_when_the_engine_fetched_bars():
+    state = empty_state()
+    events = [
+        ("tool_call", {"tool": "write_file", "arguments": {"path": "sma/code/signal_engine.py"}}),
+        ("tool_result", {"tool": "write_file", "status": "ok", "preview": "wrote"}),
+        ("tool_call", {"tool": "backtest", "arguments": {"run_dir": "sma"}}),
+        ("tool_progress", {"tool": "backtest", "message": "running backtest engine (source=yfinance)"}),
+        ("tool_result", {"tool": "backtest", "status": "ok", "preview": "ok"}),
+        ("attempt.completed", {"run_dir": "/runs/reliance", "status": "completed"}),
+    ]
+    for event_type, data in events:
+        apply_event(state, event_type, data)
+    assert state["phases"]["ground"]["status"] == "done"
+    assert "source=yfinance" in state["phases"]["ground"]["body"]
+    assert state["phases"]["plan"]["status"] == "skipped"
+    assert state["phases"]["code"]["status"] == "done"
+    assert state["phases"]["execution"]["status"] == "done"
+    assert all(phase["status"] != "waiting" for phase in state["phases"].values())

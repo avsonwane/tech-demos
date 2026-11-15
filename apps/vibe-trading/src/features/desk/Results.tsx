@@ -5,7 +5,7 @@ import type { DeskResult } from "./types"
 
 function percent(value: number | null): string {
   if (value == null || Number.isNaN(value)) return "n/a"
-  return `${(value * 100).toFixed(1)}%`
+  return `${(value * 100).toFixed(2)}%`
 }
 
 function number(value: number | null, digits = 2): string {
@@ -27,6 +27,9 @@ export function Results({ result }: { result: DeskResult }) {
     ["Win rate", percent(result.metrics.win_rate)],
     ["Fees", result.metrics.fees_reported ? money(result.metrics.fees) : "Not reported"],
   ] as const
+  const shown = result.metrics.benchmark_return == null
+    ? metrics
+    : ([...metrics, ["Buy and hold", percent(result.metrics.benchmark_return)]] as const)
   const range = [result.start_date, result.end_date].filter(Boolean).join(" – ")
   const names = result.codes.join(", ") || "Unspecified"
 
@@ -35,7 +38,7 @@ export function Results({ result }: { result: DeskResult }) {
       <Card>
         <CardHeader>
           <div className="flex flex-wrap items-center gap-2">
-            <CardTitle>Run card</CardTitle>
+            <CardTitle>{result.strategy_label ?? "Run card"}</CardTitle>
             {result.illustrative ? <Badge variant="secondary">Illustrative</Badge> : <Badge>Live</Badge>}
           </div>
         </CardHeader>
@@ -44,6 +47,9 @@ export function Results({ result }: { result: DeskResult }) {
             {names}
             {range ? ` · ${range}` : ""}
           </p>
+          {result.benchmark_label ? (
+            <p className="text-muted-foreground">Benchmark: {result.benchmark_label}</p>
+          ) : null}
           <p className="text-muted-foreground">
             Data source: {result.sources.length > 0 ? result.sources.join(", ") : "Not recorded"}
           </p>
@@ -52,7 +58,7 @@ export function Results({ result }: { result: DeskResult }) {
       </Card>
 
       <div className="grid gap-3 sm:grid-cols-3">
-        {metrics.map(([label, value]) => (
+        {shown.map(([label, value]) => (
           <div key={label} className="border border-foreground/15 px-4 py-3">
             <p className="text-xs tracking-widest uppercase text-muted-foreground">{label}</p>
             <p className="mt-2 font-heading text-2xl tracking-wide">{value}</p>

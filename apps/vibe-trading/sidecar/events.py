@@ -24,6 +24,14 @@ TERMINAL_EVENTS = {"attempt.completed", "attempt.failed", "attempt.cancelled"}
 _RUN_ID_RE = re.compile(r'"run_id"\s*:\s*"([^"]+)"')
 _BODY_LIMIT = 2000
 
+_SKIP_NOTES = {
+    "plan": "No plan text in this session.",
+    "ground": "No separate data-fetch step in this session.",
+    "code": "No strategy file event in this session.",
+    "execution": "No backtest event in this session.",
+}
+_SOURCE_RE = re.compile(r"source=([A-Za-z0-9_.-]+)")
+
 _TOOL_PHASE = {
     "get_market_data": "ground",
     "write_file": "code",
@@ -38,7 +46,9 @@ def phase_for_tool(name: str) -> str:
     lowered = name.lower()
     if "backtest" in lowered:
         return "execution"
-    if "market" in lowered or lowered in {"fetch_data", "load_bars"}:
+    if "market" in lowered or any(
+        token in lowered for token in ("ohlcv", "yfinance", "fetch_data", "load_bars", "get_bars", "download")
+    ):
         return "ground"
     return "plan"
 
@@ -139,6 +149,38 @@ def _arg_summary(arguments: Any) -> str:
     return ", ".join(parts)
 
 
+def _execution_source(state: dict[str, Any]) -> str | None:
+    match = _SOURCE_RE.search(state["phases"]["execution"]["body"])
+    return match.group(1) if match else None
+
+
+def _finish_phases(state: dict[str, Any]) -> list[dict[str, Any]]:
+    """Resolve every step once the session ends.
+
+    A step that received events is done. A step that never started is skipped,
+    except Ground when the backtest itself recorded a data source.
+    """
+    updates: list[dict[str, Any]] = []
+    source = _execution_source(state)
+    for phase_id, _title in PHASES:
+        phase = state["phases"][phase_id]
+        if phase["status"] == "working":
+            updates.append(_append(state, phase_id, "", "done"))
+        elif phase["status"] == "waiting":
+            if phase_id == "ground" and source:
+                updates.append(
+                    _append(
+                        state,
+                        phase_id,
+                        f"Bars loaded by the backtest engine (source={source}).",
+                        "done",
+                    )
+                )
+            else:
+                updates.append(_append(state, phase_id, _SKIP_NOTES[phase_id], "skipped"))
+    return updates
+
+
 def apply_event(state: dict[str, Any], event_type: str, data: dict[str, Any]) -> list[dict[str, Any]]:
     """Fold one SSE event into ``state`` and return the phase snapshots that changed."""
     if not isinstance(data, dict):
@@ -194,16 +236,12 @@ def apply_event(state: dict[str, Any], event_type: str, data: dict[str, Any]) ->
         found = _run_id_from(data)
         if found:
             state["run_id"] = found
-        if event_type == "attempt.completed":
-            for phase_id, _title in PHASES:
-                phase = state["phases"][phase_id]
-                if phase["status"] == "working":
-                    updates.append(_append(state, phase_id, "", "done"))
-        elif event_type == "attempt.cancelled":
+        if event_type == "attempt.cancelled":
             state["error"] = "The session was cancelled."
-        else:
+        elif event_type != "attempt.completed":
             error = data.get("error") or data.get("summary") or "The session failed."
             state["error"] = str(error)
+        updates.extend(_finish_phases(state))
         return updates
 
     return updates

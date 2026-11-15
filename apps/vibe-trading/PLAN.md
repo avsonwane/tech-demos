@@ -42,7 +42,7 @@ The form lists xAI, OpenAI, and Anthropic. The first with a key is the default, 
 | --- | --- |
 | xAI (`XAI_API_KEY`) | `LANGCHAIN_PROVIDER=openai`, `OPENAI_API_KEY` set from `XAI_API_KEY`, `OPENAI_BASE_URL=https://api.x.ai/v1`, model `grok-4.6`. The 0.1.19 catalog has no xAI provider. |
 | OpenAI (`OPENAI_API_KEY`) | `LANGCHAIN_PROVIDER=openai`, `OPENAI_BASE_URL=https://api.openai.com/v1`, model `gpt-5.5` (the catalog default). |
-| Anthropic (`ANTHROPIC_API_KEY`) | `LANGCHAIN_PROVIDER=anthropic`, model `claude-sonnet-4-6` (the catalog default). Optional `ANTHROPIC_WORKSPACE_ID` is sent as `anthropic-workspace-id`. The 0.1.19 Anthropic builder does not take that header, so the serve launcher adds it on `ChatAnthropic`. |
+| Anthropic (`ANTHROPIC_API_KEY`) | `LANGCHAIN_PROVIDER=anthropic`, model `claude-sonnet-5-5` (the 0.1.19 catalog default is `claude-sonnet-4-6`). Optional `ANTHROPIC_WORKSPACE_ID` is sent as `anthropic-workspace-id`. The 0.1.19 Anthropic builder does not take that header, so the serve launcher adds it on `ChatAnthropic`. The same wrapper drops non-default `temperature`, `top_p`, and `top_k` for `claude-sonnet-5-5` and `claude-fable-5*`. |
 
 ## Session and result contract (0.1.19)
 
@@ -51,7 +51,8 @@ The form lists xAI, OpenAI, and Anthropic. The first with a key is the default, 
 - `GET /sessions/{id}/events?replay=active` SSE. Frames use `event:` plus JSON `data`. Tool calls are `tool_call` (`tool`, `arguments`). Progress is `tool_progress` and `tool_heartbeat`. Results are `tool_result` (`tool`, `status`, `preview`). Data fetch is `get_market_data`. Code is `write_file` / `edit_file`. Execution is `backtest`. Earlier assistant text is the plan. `attempt.completed` carries `run_dir`; the run id is that directory name. `attempt.failed` and `attempt.cancelled` end the turn.
 - `GET /runs/{run_id}` includes `metrics`, `artifacts_equity_csv` (timestamp, equity, drawdown, benchmark_equity), `artifacts_trades_csv`, and `run_card` (`data_sources`, `backtest.start_date`, `backtest.end_date`, `backtest.codes`). The equity preview omits the benchmark, so the desk prefers the full CSV rows.
 - `GET /runs/{run_id}/code` returns `{ "signal_engine.py": "<source>" }`.
-- Summary metrics in 0.1.19 have return, annual return, Sharpe, max drawdown, and win rate. They do not have a fee total. The desk shows fees when a fee or commission field is present, and says they were not reported otherwise. Per-fill fees stay in `fills.jsonl`, which this page does not scrape.
+- Summary metrics in 0.1.19 have return, annual return, Sharpe, max drawdown, and win rate. They do not have a fee total. The desk sums trade `fee` / `commission` columns, then `fills.jsonl`, and says fees were not reported only when neither is present.
+- A nested strategy directory (for example `sma/`) is the headline. Buy-and-hold at the run root is the benchmark. Ground is done when the backtest recorded a data source, and every step is done or skipped after a terminal event.
 
 ## Layout
 
@@ -72,11 +73,11 @@ apps/vibe-trading/
 
 ## Testing and hooks
 
-Pytest covers the mocked session proxy, the phase reducer, the run parser, the provider env mapping, the Anthropic workspace header injection, the replay stream, and that `RELIANCE.NS` still classifies as `india_equity`. No test calls an LLM or the network. No git hooks: the repo has no hook runner.
+Pytest covers the mocked session proxy, the phase reducer (including a finished run with no separate data-fetch tool), the run parser, the nested `sma/` fixture, fill-fee summing, the provider env mapping, the Anthropic workspace header, the sonnet-5-5 sampling drop, the replay stream, and that `RELIANCE.NS` still classifies as `india_equity`. No test calls an LLM or the network. No git hooks: the repo has no hook runner.
 
 ## Deferred
 
 - Token-by-token chat. The timeline updates on tool and phase events.
 - Swarm, alpha bench, options, and portfolio screens.
-- Reading `fills.jsonl` to sum fees when the summary omits them.
+- A per-fill fee breakdown on the trade table. The card shows one summed total.
 - A repo-level formatter hook.

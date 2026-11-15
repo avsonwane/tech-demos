@@ -5,8 +5,9 @@ from __future__ import annotations
 import asyncio
 import json
 import os
-import socket
 import subprocess
+import urllib.error
+import urllib.request
 import sys
 import threading
 import time
@@ -65,6 +66,23 @@ def _sample() -> dict[str, Any]:
     return json.loads(SAMPLE_PATH.read_text(encoding="utf-8"))
 
 
+def _replay_result() -> dict[str, Any]:
+    """Replay the saved RELIANCE layout: SMA headline, buy-and-hold benchmark."""
+    from results import resolve_result
+
+    fixture = SIDECAR / "fixtures" / "reliance_sma"
+    resolved = resolve_result(
+        {
+            "run_id": "20261115_125847_46_bb8d5a",
+            "status": "illustrative",
+            "run_directory": str(fixture),
+        }
+    )
+    resolved["illustrative"] = True
+    resolved["status"] = "illustrative"
+    return resolved
+
+
 def _provider_payload() -> list[dict[str, Any]]:
     payload = []
     for provider_id, spec in PROVIDERS.items():
@@ -99,11 +117,12 @@ def stop_serve() -> None:
         proc.kill()
 
 
-def _port_open() -> bool:
+def serve_http_ready(base_url: str = SERVE_URL) -> bool:
+    """Readiness uses ``GET /health``. ``GET /`` 404s: the package has no web UI."""
     try:
-        with socket.create_connection(("127.0.0.1", SERVE_PORT), timeout=0.4):
-            return True
-    except OSError:
+        with urllib.request.urlopen(f"{base_url.rstrip('/')}/health", timeout=0.4) as response:
+            return 200 <= response.status < 300
+    except (OSError, urllib.error.URLError, TimeoutError):
         return False
 
 
@@ -112,7 +131,7 @@ def _wait_for_port(proc: subprocess.Popen[bytes], timeout: float = 90) -> None:
     while time.time() < deadline:
         if proc.poll() is not None:
             raise RuntimeError(f"vibe-trading serve exited ({proc.returncode}).")
-        if _port_open():
+        if serve_http_ready():
             return
         time.sleep(0.3)
     raise RuntimeError("vibe-trading serve did not open port 8899.")
@@ -247,7 +266,7 @@ def _iterate(prepared: dict[str, Any]):
             yield "phase", phase
         if delay > 0:
             time.sleep(delay)
-        yield "result", sample["result"]
+        yield "result", _replay_result()
         yield "done", {"mode": "replay"}
         return
 

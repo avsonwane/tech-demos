@@ -29,9 +29,9 @@ PROVIDERS: dict[str, dict[str, str]] = {
     "anthropic": {
         "label": "Anthropic",
         "env": "ANTHROPIC_API_KEY",
-        "model": "claude-sonnet-4-6",
+        "model": "claude-sonnet-5-5",
         "langchain_provider": "anthropic",
-        "note": "Catalog default model. Optional ANTHROPIC_WORKSPACE_ID is sent as anthropic-workspace-id.",
+        "note": "Prefer claude-sonnet-5-5 over the 0.1.19 catalog default (claude-sonnet-4-6). Optional ANTHROPIC_WORKSPACE_ID is sent as anthropic-workspace-id.",
     },
 }
 

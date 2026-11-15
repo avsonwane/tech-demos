@@ -36,6 +36,7 @@ export function Timeline({ phases, running }: TimelineProps) {
               </h3>
               {active ? <Badge variant="secondary">Working</Badge> : null}
               {status === "done" ? <Badge variant="outline">Done</Badge> : null}
+              {status === "skipped" ? <Badge variant="outline">Skipped</Badge> : null}
             </div>
             {phase?.body ? (
               <p className="text-sm leading-relaxed whitespace-pre-wrap">{phase.body}</p>

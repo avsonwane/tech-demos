@@ -26,7 +26,7 @@ export type Health = {
 export type Phase = {
   id: string
   title: string
-  status: "waiting" | "working" | "done"
+  status: "waiting" | "working" | "done" | "skipped"
   body: string
 }
 
@@ -53,6 +53,7 @@ export type DeskMetrics = {
   sharpe: number | null
   max_drawdown: number | null
   win_rate: number | null
+  benchmark_return: number | null
   fees: number | null
   fees_reported: boolean
 }
@@ -60,6 +61,8 @@ export type DeskMetrics = {
 export type DeskResult = {
   run_id: string | null
   status: string | null
+  strategy_label: string | null
+  benchmark_label: string | null
   codes: string[]
   start_date: string | null
   end_date: string | null
