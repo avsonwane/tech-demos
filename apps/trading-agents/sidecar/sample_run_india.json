@@ -1,0 +1,133 @@
+{
+  "source": "illustrative-india-sample",
+  "label": "Illustrative India-mode transcript for RELIANCE.NS. Not produced by a live TradingAgents run. No LLM API key was available. Prices in this transcript are sample rupee figures.",
+  "ticker": "RELIANCE.NS",
+  "as_of": "2026-11-13",
+  "provider": "xai",
+  "quick_model": "grok-4.6",
+  "deep_model": "grok-4.6",
+  "debate_rounds": 1,
+  "india_mode": true,
+  "sources": [
+    {"id": "yfinance_financials", "label": "Yahoo Finance financials", "status": "ok", "detail": "Illustrative sample row, not a live fetch. Quarterly statements in INR."},
+    {"id": "screener", "label": "Screener.in", "status": "ok", "detail": "Illustrative sample row. Ratios, quarterly results, and promoter / FII / DII shareholding."},
+    {"id": "tradingview", "label": "TradingView technicals", "status": "ok", "detail": "Illustrative sample. NSE:RELIANCE 1D BUY, 1W NEUTRAL. Supplementary, not a live scan."},
+    {"id": "moneycontrol", "label": "Moneycontrol markets", "status": "ok", "detail": "Illustrative sample row."},
+    {"id": "economic_times", "label": "Economic Times markets", "status": "ok", "detail": "Illustrative sample row."},
+    {"id": "business_standard", "label": "Business Standard markets", "status": "ok", "detail": "Illustrative sample row."},
+    {"id": "livemint", "label": "LiveMint markets", "status": "ok", "detail": "Illustrative sample row."},
+    {"id": "google_news", "label": "Google News RSS", "status": "ok", "detail": "Illustrative sample row."},
+    {"id": "nse_announcements", "label": "NSE corporate announcements", "status": "ok", "detail": "Illustrative sample row."},
+    {"id": "headline_tone", "label": "Headline tone", "status": "ok", "detail": "Illustrative sample. Mixed on a handful of headlines."},
+    {"id": "inr_usd", "label": "INR/USD", "status": "ok", "detail": "Illustrative sample row."},
+    {"id": "india_vix", "label": "India VIX", "status": "ok", "detail": "Illustrative sample row."},
+    {"id": "nifty", "label": "Nifty 50", "status": "ok", "detail": "Illustrative sample row."},
+    {"id": "sector_index", "label": "Nifty Energy", "status": "ok", "detail": "Illustrative sample row."},
+    {"id": "brent", "label": "Brent crude", "status": "ok", "detail": "Illustrative sample row."},
+    {"id": "rbi_note", "label": "RBI repo rate and CPI", "status": "ok", "detail": "Illustrative sample. Static note, not a live print."},
+    {"id": "nse_fii_dii", "label": "NSE FII/DII flows", "status": "ok", "detail": "Illustrative sample row."},
+    {"id": "stocktwits", "label": "StockTwits", "status": "skipped", "detail": "Not used in India mode."},
+    {"id": "reddit", "label": "Reddit", "status": "skipped", "detail": "Not used in India mode."},
+    {"id": "fred", "label": "FRED", "status": "skipped", "detail": "Replaced by the India macro set."}
+  ],
+  "events": [
+    {
+      "id": "market",
+      "phase": "analyst",
+      "role": "market",
+      "title": "Market / technical",
+      "status": "complete",
+      "body": "Sample figures for this transcript, not a live quote. Prices are in ₹.\n\nRELIANCE.NS is treated as range-bound into the 2026-11-13 as-of date, with a sample close near ₹1,340. The sample 50-day average is still rising, and the price is sitting on it rather than breaking it. Nifty 50 is the benchmark. The sample spread versus Nifty over 21 sessions is about flat. A 5% circuit band is not in play at this print.\n\nTradingView technicals (supplementary): sample 1D summary BUY, sample 1W summary NEUTRAL, with RSI near 55 and ADX not showing a strong trend. That scan does not replace the Yahoo price. Weekly index expiry can pin a session like this, so the hold is about the cash trend, not the expiry print."
+    },
+    {
+      "id": "social",
+      "phase": "analyst",
+      "role": "social",
+      "title": "Sentiment",
+      "status": "complete",
+      "body": "Sample sentiment from Indian headlines, not a social scrape. StockTwits and Reddit were not used.\n\nThe illustrative headlines are mixed. One notes refining margins, another notes FII selling in the cash market. The lexicon tone is mixed because both words show up. There is no sample of a promoter-pledge disclosure."
+    },
+    {
+      "id": "news",
+      "phase": "analyst",
+      "role": "news",
+      "title": "News",
+      "status": "complete",
+      "body": "Sample headlines, not a live news pull.\n\nThe set has a Moneycontrol note on the refining margin, an Economic Times item on FII cash-market selling, and an NSE announcement that management will meet investors. No FRED series is included. The static sample RBI note has the repo rate at 5.50% and October CPI at 6.09%. Brent is a background input for the refining book, not a company filing."
+    },
+    {
+      "id": "fundamentals",
+      "phase": "analyst",
+      "role": "fundamentals",
+      "title": "Fundamentals",
+      "status": "complete",
+      "body": "Sample fundamentals, not a filing extract. Sources named here are Yahoo Finance quarterly statements and the public Screener.in page.\n\nThe illustrative picture is a consolidated refining and retail business with a large ₹ market cap. Sample promoter holding is just over 50%, FII holding is lower than a year earlier, and DII holding is higher. The public page in this sample has no promoter-pledge figure, so none is invented. Quality of the franchise is not the objection. The price already assumes the retail and energy books keep compounding."
+    },
+    {
+      "id": "debate-0",
+      "phase": "debate",
+      "role": "bull",
+      "title": "Bull researcher",
+      "status": "complete",
+      "body": "The cash trend is intact and the business is still the large-cap compounder in this sample. Promoter holding is stable, DII buying has offset the FII sales, and the supplementary TradingView 1D BUY agrees with the rising 50-day average near ₹1,340. I would paper-buy a starter only if the next session is not an expiry pin. I would not size it as if the 1W NEUTRAL had flipped."
+    },
+    {
+      "id": "debate-1",
+      "phase": "debate",
+      "role": "bear",
+      "title": "Bear researcher",
+      "status": "complete",
+      "body": "A starter buy is how a flat relative-strength chart gets defended. FII selling, a 1W NEUTRAL scan, and CPI sitting above the RBI tolerance band are reasons to wait through results season rather than pay ₹1,340. The circuit band is not the story. The multiple is. One round of sample evidence has no margin of safety."
+    },
+    {
+      "id": "investment-plan",
+      "phase": "plan",
+      "role": "manager",
+      "title": "Research manager",
+      "status": "complete",
+      "body": "Both sides are using the same sample facts, in rupees. The bull is right that promoter holding and the 50-day average are stable. The bear is right that FII selling and a neutral weekly scan do not pay for a new entry before the next results window. Plan: hold. Revisit if the sample price loses the 50-day average, or if the shareholding table shows a real promoter-pledge number.\n\nRating: Hold"
+    },
+    {
+      "id": "trader",
+      "phase": "trader",
+      "role": "trader",
+      "title": "Trader",
+      "status": "complete",
+      "body": "Proposal: Hold. No paper entry and no paper exit. The research plan does not give a rupee level that pays for the FII outflow, and weekly expiry is close enough that today's print can be positioning. I will not manufacture a buy to match the long-term retail story."
+    },
+    {
+      "id": "risk-0",
+      "phase": "risk",
+      "role": "aggressive",
+      "title": "Aggressive risk",
+      "status": "complete",
+      "body": "Hold is the timid reading of this sample. The supplementary 1D BUY and a stable promoter stake are enough for a small paper starter, with the stop under the sample 50-day average. I would rather own a small position than watch the retail book compound without us. The 1W NEUTRAL keeps the size small."
+    },
+    {
+      "id": "risk-1",
+      "phase": "risk",
+      "role": "conservative",
+      "title": "Conservative risk",
+      "status": "complete",
+      "body": "A starter is how a hold becomes an accidental buy. FII selling plus a weekly scan that is only neutral is a reason to do nothing, not a reason to nibble ahead of results season. If the refining-margin headline is noise, the price in ₹ will still be there after the next filing. I back the trader's hold."
+    },
+    {
+      "id": "risk-2",
+      "phase": "risk",
+      "role": "neutral",
+      "title": "Neutral risk",
+      "status": "complete",
+      "body": "The aggressive case depends on the 1D scan, which this sample already labeled supplementary. The conservative case is about entry and about the FII print, which is the part the sources actually speak to. With one round of evidence, hold is the position that does not pretend the debate resolved the multiple. I side with hold."
+    },
+    {
+      "id": "decision",
+      "phase": "decision",
+      "role": "portfolio",
+      "title": "Portfolio decision",
+      "status": "complete",
+      "action": "HOLD",
+      "rating": "Hold",
+      "body": "Rating: Hold\n\nPaper decision: hold RELIANCE.NS. The analyst stack describes a stable rupee trend, stable promoter holding, and FII selling that the DII print only partly offsets. The bull wants a starter, the bear wants to stand aside, and the risk team does not have a second round that would justify overriding the trader. The TradingView 1D BUY stays supplementary. The portfolio manager accepts the hold.\n\nNo order is sent. This transcript is illustrative and is not financial advice."
+    }
+  ]
+}

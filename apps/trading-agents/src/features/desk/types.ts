@@ -47,6 +47,15 @@ export type RunMeta = {
   quick_model: string
   deep_model: string
   debate_rounds: number
+  india_mode?: boolean
+  currency?: "INR" | "USD"
+}
+
+export type SourceRow = {
+  id: string
+  label: string
+  status: "ok" | "failed" | "skipped" | "blocked"
+  detail: string
 }
 
 export type RunRequest = {
@@ -57,10 +66,12 @@ export type RunRequest = {
   deep_model: string
   debate_rounds: number
   mode: "auto" | "replay"
+  india_mode: boolean
 }
 
 export type SseMessage =
   | { event: "meta"; data: RunMeta }
+  | { event: "sources"; data: { sources: SourceRow[] } }
   | { event: "stage"; data: Stage }
   | { event: "done"; data: { mode: string } }
   | { event: "error"; data: { message: string } }

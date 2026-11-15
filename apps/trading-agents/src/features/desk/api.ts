@@ -18,7 +18,7 @@ function parseBlock(block: string): SseMessage | null {
   }
   if (dataLines.length === 0) return null
   const data = JSON.parse(dataLines.join("\n")) as SseMessage["data"]
-  if (event === "meta" || event === "stage" || event === "done" || event === "error") {
+  if (event === "meta" || event === "sources" || event === "stage" || event === "done" || event === "error") {
     return { event, data } as SseMessage
   }
   return null
