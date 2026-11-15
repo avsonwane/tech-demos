@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import socket
 import subprocess
 import urllib.error
 import urllib.request
@@ -21,14 +22,40 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 
-from providers import PROVIDERS, key_is_set, preferred_provider, provider_child_env
+from providers import (
+    PROVIDERS,
+    anthropic_choices,
+    default_model,
+    key_is_set,
+    preferred_provider,
+    provider_child_env,
+    resolve_model,
+)
+from tickers import data_error_message, empty_price_message, missing_symbol, ticker_error
 
 SIDECAR = Path(__file__).resolve().parent
 load_dotenv(SIDECAR.parent / ".env", override=False)
 
 SAMPLE_PATH = SIDECAR / "sample_run.json"
 RUN_DATA = SIDECAR / ".run-data"
-SERVE_PORT = 8899
+
+
+def _env_port(*names: str, default: int) -> int:
+    for name in names:
+        raw = os.environ.get(name, "").strip()
+        if not raw:
+            continue
+        try:
+            value = int(raw)
+        except ValueError as exc:
+            raise RuntimeError(f"{name} must be a TCP port. Got {raw}.") from exc
+        if value < 1 or value > 65535:
+            raise RuntimeError(f"{name} must be a TCP port. Got {raw}.")
+        return value
+    return default
+
+
+SERVE_PORT = _env_port("VIBE_PORT", "VIBE_SERVE_PORT", default=8899)
 SERVE_URL = f"http://127.0.0.1:{SERVE_PORT}"
 
 PRESETS = [
@@ -60,6 +87,7 @@ class RunIn(BaseModel):
     prompt: str = Field(min_length=1, max_length=8000)
     provider: str = "xai"
     mode: str = "auto"
+    model: str = ""
 
 
 def _sample() -> dict[str, Any]:
@@ -92,7 +120,8 @@ def _provider_payload() -> list[dict[str, Any]]:
                 "label": spec["label"],
                 "env": spec["env"],
                 "key_set": key_is_set(spec["env"]),
-                "model": spec["model"],
+                "model": default_model(provider_id),
+                "models": anthropic_choices() if provider_id == "anthropic" else [],
                 "note": spec["note"],
             }
         )
@@ -126,28 +155,49 @@ def serve_http_ready(base_url: str = SERVE_URL) -> bool:
         return False
 
 
+def port_in_use(port: int, host: str = "127.0.0.1") -> bool:
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
+        sock.settimeout(0.2)
+        return sock.connect_ex((host, port)) == 0
+
+
+def port_busy_message(port: int, label: str) -> str:
+    return (
+        f"{label} port {port} is already in use. "
+        f"Free it with: lsof -ti tcp:{port} | xargs kill"
+    )
+
+
 def _wait_for_port(proc: subprocess.Popen[bytes], timeout: float = 90) -> None:
     deadline = time.time() + timeout
     while time.time() < deadline:
         if proc.poll() is not None:
-            raise RuntimeError(f"vibe-trading serve exited ({proc.returncode}).")
+            raise RuntimeError(
+                f"vibe-trading serve exited ({proc.returncode}). "
+                f"{port_busy_message(SERVE_PORT, 'Vibe-Trading')}"
+            )
         if serve_http_ready():
             return
         time.sleep(0.3)
-    raise RuntimeError("vibe-trading serve did not open port 8899.")
+    raise RuntimeError(port_busy_message(SERVE_PORT, "Vibe-Trading"))
 
 
-def ensure_serve(provider_id: str) -> None:
+def ensure_serve(provider_id: str, model: str | None = None) -> None:
     """Start or restart ``vibe-trading serve`` with this provider's child env."""
     global _serve_proc, _serve_provider, _serve_error
+    chosen = model or default_model(provider_id)
+    identity = f"{provider_id}:{chosen}"
     with _serve_lock:
-        if serve_running() and _serve_provider == provider_id:
+        if serve_running() and _serve_provider == identity:
             return
         stop_serve()
+        if port_in_use(SERVE_PORT):
+            raise RuntimeError(port_busy_message(SERVE_PORT, "Vibe-Trading"))
         RUN_DATA.mkdir(parents=True, exist_ok=True)
-        env = provider_child_env(provider_id)
+        env = provider_child_env(provider_id, model=chosen)
         env["VIBE_TRADING_HOME"] = str(RUN_DATA)
         env["PYTHONUNBUFFERED"] = "1"
+        env["VIBE_PORT"] = str(SERVE_PORT)
         env["VIBE_SERVE_PORT"] = str(SERVE_PORT)
         log_handle = (RUN_DATA / "serve.log").open("ab")
         proc = subprocess.Popen(
@@ -158,7 +208,7 @@ def ensure_serve(provider_id: str) -> None:
             stderr=subprocess.STDOUT,
         )
         _serve_proc = proc
-        _serve_provider = provider_id
+        _serve_provider = identity
         try:
             _wait_for_port(proc)
         except Exception as exc:
@@ -210,6 +260,11 @@ def _prepare(body: RunIn) -> dict[str, Any]:
     prompt = body.prompt.strip()
     if not prompt:
         raise ValueError("Enter a strategy prompt.")
+    if body.mode != "replay":
+        missing = missing_symbol(prompt)
+        if missing:
+            raise ValueError(ticker_error(missing))
+    model = resolve_model(body.provider, body.model)
     has_key = key_is_set(spec["env"])
     if body.mode == "live" and not has_key:
         raise ValueError(f"{spec['env']} is not set.")
@@ -225,7 +280,7 @@ def _prepare(body: RunIn) -> dict[str, Any]:
         "reason": reason,
         "prompt": prompt,
         "provider": body.provider,
-        "model": spec["model"],
+        "model": model,
     }
 
 
@@ -270,12 +325,22 @@ def _iterate(prepared: dict[str, Any]):
         yield "done", {"mode": "replay"}
         return
 
-    ensure_serve(prepared["provider"])
+    ensure_serve(prepared["provider"], prepared["model"])
     from proxy import VibeClient, drive_live
 
     client = VibeClient(SERVE_URL)
-    for name, payload in drive_live(client, prepared["prompt"]):
-        yield name, payload
+    try:
+        for name, payload in drive_live(client, prepared["prompt"]):
+            if name == "result":
+                empty = empty_price_message(prepared["prompt"], payload)
+                if empty:
+                    raise RuntimeError(empty)
+            yield name, payload
+    except Exception as exc:
+        rewritten = data_error_message(prepared["prompt"], str(exc))
+        if rewritten and rewritten != str(exc):
+            raise RuntimeError(rewritten) from exc
+        raise
     yield "done", {"mode": "live"}
 
 

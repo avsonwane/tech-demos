@@ -31,9 +31,23 @@ PROVIDERS: dict[str, dict[str, str]] = {
         "env": "ANTHROPIC_API_KEY",
         "model": "claude-sonnet-5-5",
         "langchain_provider": "anthropic",
-        "note": "Prefer claude-sonnet-5-5 over the 0.1.19 catalog default (claude-sonnet-4-6). Optional ANTHROPIC_WORKSPACE_ID is sent as anthropic-workspace-id.",
+        "note": "Optional ANTHROPIC_WORKSPACE_ID is sent as anthropic-workspace-id. Set ANTHROPIC_MODEL to change the default.",
     },
 }
+
+ANTHROPIC_MODELS: list[dict[str, str]] = [
+    {"id": "claude-sonnet-5-5", "label": "claude-sonnet-5-5", "note": ""},
+    {
+        "id": "claude-opus-5-5",
+        "label": "claude-opus-5-5",
+        "note": "Costs several times more than Sonnet.",
+    },
+    {
+        "id": "claude-fable-5-2",
+        "label": "claude-fable-5-2",
+        "note": "Costs several times more than Sonnet.",
+    },
+]
 
 
 def key_is_set(env_name: str, source: dict[str, str] | None = None) -> bool:
@@ -41,7 +55,48 @@ def key_is_set(env_name: str, source: dict[str, str] | None = None) -> bool:
     return bool(str(values.get(env_name, "")).strip())
 
 
-def provider_child_env(provider_id: str, base: dict[str, str] | None = None) -> dict[str, str]:
+def _values(source: dict[str, str] | None) -> dict[str, str]:
+    if source is not None:
+        return source
+    return dict(os.environ)
+
+
+def anthropic_choices(source: dict[str, str] | None = None) -> list[dict[str, str]]:
+    """The page's Anthropic models. ``ANTHROPIC_MODEL`` is included when it is new."""
+    choices = [dict(item) for item in ANTHROPIC_MODELS]
+    override = str(_values(source).get("ANTHROPIC_MODEL", "")).strip()
+    if override and override not in {item["id"] for item in choices}:
+        choices.insert(0, {"id": override, "label": override, "note": ""})
+    return choices
+
+
+def default_model(provider_id: str, source: dict[str, str] | None = None) -> str:
+    spec = PROVIDERS[provider_id]
+    if provider_id == "anthropic":
+        override = str(_values(source).get("ANTHROPIC_MODEL", "")).strip()
+        if override:
+            return override
+    return spec["model"]
+
+
+def resolve_model(provider_id: str, requested: str = "", source: dict[str, str] | None = None) -> str:
+    """Pick the model for one run. An Anthropic page selection must be listed."""
+    requested = (requested or "").strip()
+    if provider_id != "anthropic":
+        return default_model(provider_id, source)
+    allowed = {item["id"] for item in anthropic_choices(source)}
+    if requested:
+        if requested not in allowed:
+            raise ValueError("Unknown Anthropic model.")
+        return requested
+    return default_model(provider_id, source)
+
+
+def provider_child_env(
+    provider_id: str,
+    base: dict[str, str] | None = None,
+    model: str | None = None,
+) -> dict[str, str]:
     """Return a serve-process environment for one provider.
 
     The returned dict is a copy. ``base`` is not modified, so a parent process
@@ -50,7 +105,7 @@ def provider_child_env(provider_id: str, base: dict[str, str] | None = None) -> 
     spec = PROVIDERS[provider_id]
     env = dict(os.environ if base is None else base)
     env["LANGCHAIN_PROVIDER"] = spec["langchain_provider"]
-    env["LANGCHAIN_MODEL_NAME"] = spec["model"]
+    env["LANGCHAIN_MODEL_NAME"] = model or default_model(provider_id, env)
     if provider_id == "xai":
         env["OPENAI_API_KEY"] = str(env.get("XAI_API_KEY", "")).strip()
         env["OPENAI_BASE_URL"] = XAI_BASE_URL

@@ -1,9 +1,16 @@
+export type ModelChoice = {
+  id: string
+  label: string
+  note: string
+}
+
 export type ProviderInfo = {
   id: string
   label: string
   env: string
   key_set: boolean
   model: string
+  models?: ModelChoice[]
   note: string
 }
 
@@ -58,6 +65,61 @@ export type DeskMetrics = {
   fees_reported: boolean
 }
 
+export type ReportRow = {
+  id: string
+  label: string
+  unit: "percent" | "number" | "money" | "count"
+  tone: "sign" | "sharpe" | "drawdown" | "winrate" | "plain" | "ratio" | "cost"
+  signed: boolean
+  strategy: number | null
+  benchmark: number | null
+}
+
+export type RoundTrip = {
+  entry_time: string | null
+  exit_time: string | null
+  entry_price: number | null
+  exit_price: number | null
+  qty: number | null
+  holding_days: number | null
+  pnl: number | null
+  return_pct: number | null
+  fees: number | null
+  open: boolean
+}
+
+export type DrawdownPeriod = {
+  start: string
+  trough: string
+  recovery: string | null
+  depth: number
+}
+
+export type ReportNotes = {
+  sources: string[]
+  start_date: string | null
+  end_date: string | null
+  first_bar: string | null
+  last_bar: string | null
+  bars: number
+  warmup: string | null
+  starting_capital: number | null
+  fee_model: string | null
+  fees: number | null
+  sharpe_note: string | null
+}
+
+export type DeskReport = {
+  summary: string
+  comparison: ReportRow[]
+  monthly: { year: number; months: Array<number | null> }[]
+  round_trips: RoundTrip[]
+  drawdowns: DrawdownPeriod[]
+  notes: ReportNotes
+  markdown: string
+  trades_csv: string
+}
+
 export type DeskResult = {
   run_id: string | null
   status: string | null
@@ -72,6 +134,7 @@ export type DeskResult = {
   trades: Trade[]
   code: string
   illustrative: boolean
+  report?: DeskReport
 }
 
 export type RunMeta = {
@@ -87,6 +150,7 @@ export type RunRequest = {
   prompt: string
   provider: string
   mode: "auto" | "live" | "replay"
+  model?: string
 }
 
 export type SseMessage =

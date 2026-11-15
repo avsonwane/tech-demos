@@ -19,6 +19,7 @@ export function DeskApp() {
   const [healthError, setHealthError] = useState<string | null>(null)
   const [prompt, setPrompt] = useState(FALLBACK_PROMPT)
   const [providerId, setProviderId] = useState("xai")
+  const [modelId, setModelId] = useState("")
   const [status, setStatus] = useState<"idle" | "running" | "done" | "error">("idle")
   const [meta, setMeta] = useState<RunMeta | null>(null)
   const [phases, setPhases] = useState<Record<string, Phase>>({})
@@ -36,7 +37,10 @@ export function DeskApp() {
           next.providers.find((provider) => provider.id === "xai" && provider.key_set) ??
           next.providers.find((provider) => provider.key_set) ??
           next.providers.find((provider) => provider.id === "xai")
-        if (preferred) setProviderId(preferred.id)
+        if (preferred) {
+          setProviderId(preferred.id)
+          setModelId(preferred.model)
+        }
         if (next.presets[0]) setPrompt(next.presets[0].prompt)
       })
       .catch((reason: unknown) => {
@@ -55,6 +59,8 @@ export function DeskApp() {
     () => health?.providers.find((item) => item.id === providerId),
     [health, providerId],
   )
+  const models = provider?.models ?? []
+  const selectedModel = modelId || provider?.model || ""
 
   async function start(mode: RunRequest["mode"]) {
     abortRef.current?.abort()
@@ -67,7 +73,12 @@ export function DeskApp() {
     setError(null)
     try {
       await streamRun(
-        { prompt: prompt.trim(), provider: providerId, mode },
+        {
+          prompt: prompt.trim(),
+          provider: providerId,
+          mode,
+          model: models.length > 0 ? selectedModel : undefined,
+        },
         (message) => {
           if (message.event === "meta") {
             setMeta(message.data)
@@ -97,7 +108,7 @@ export function DeskApp() {
   }
 
   const running = status === "running"
-  const started = status !== "idle" || Object.keys(phases).length > 0
+  const started = Object.keys(phases).length > 0 || status === "running" || status === "done"
 
   return (
     <main className="mx-auto w-full max-w-5xl px-5 py-12">
@@ -151,24 +162,54 @@ export function DeskApp() {
                 spellCheck
               />
             </div>
-            <div className="grid gap-2 sm:max-w-xs">
-              <Label htmlFor="provider">Provider</Label>
-              <Select value={providerId} onValueChange={setProviderId} disabled={running || !health}>
-                <SelectTrigger id="provider" className="w-full">
-                  <SelectValue placeholder="Provider" />
-                </SelectTrigger>
-                <SelectContent position="popper">
-                  {(health?.providers ?? []).map((item) => (
-                    <SelectItem key={item.id} value={item.id}>
-                      {item.label}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {provider ? (
-                <p className="text-sm text-muted-foreground">
-                  {provider.model}. {provider.note}
-                </p>
+            <div className="grid gap-4 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label htmlFor="provider">Provider</Label>
+                <Select
+                  value={providerId}
+                  onValueChange={(value) => {
+                    setProviderId(value)
+                    const next = health?.providers.find((item) => item.id === value)
+                    setModelId(next?.model ?? "")
+                  }}
+                  disabled={running || !health}
+                >
+                  <SelectTrigger id="provider" className="w-full">
+                    <SelectValue placeholder="Provider" />
+                  </SelectTrigger>
+                  <SelectContent position="popper">
+                    {(health?.providers ?? []).map((item) => (
+                      <SelectItem key={item.id} value={item.id}>
+                        {item.label}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {provider && models.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    {provider.model}. {provider.note}
+                  </p>
+                ) : null}
+              </div>
+              {models.length > 0 ? (
+                <div className="grid gap-2">
+                  <Label htmlFor="model">Model</Label>
+                  <Select value={selectedModel} onValueChange={setModelId} disabled={running}>
+                    <SelectTrigger id="model" className="w-full">
+                      <SelectValue placeholder="Model" />
+                    </SelectTrigger>
+                    <SelectContent position="popper">
+                      {models.map((item) => (
+                        <SelectItem key={item.id} value={item.id}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  <p className="text-sm text-muted-foreground">
+                    Opus and Fable cost several times more than Sonnet.
+                  </p>
+                </div>
               ) : null}
             </div>
           </CardContent>
@@ -219,7 +260,7 @@ export function DeskApp() {
       ) : null}
 
       {started ? <Timeline phases={phases} running={running} /> : null}
-      {result ? <Results result={result} /> : null}
+      {result ? <Results result={result} model={meta?.model} /> : null}
       <div ref={bottomRef} />
 
       <Separator className="my-10" />

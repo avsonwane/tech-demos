@@ -79,6 +79,9 @@ def test_replay_stream_includes_phases_and_the_sample_result(monkeypatch):
     assert len(result["trades"]) == 3
     assert "rolling(20)" in result["code"]
     assert "Buy and hold" not in result["code"]
+    assert "17.64 percentage points" in result["report"]["summary"]
+    assert result["report"]["comparison"][2]["strategy"] == 0.8
+    assert result["report"]["round_trips"][0]["pnl"] == 120
 
 
 def test_auto_without_a_key_replays(monkeypatch):
@@ -92,6 +95,73 @@ def test_auto_without_a_key_replays(monkeypatch):
     assert response.status_code == 200
     assert "OPENAI_API_KEY is not set" in response.text
     assert '"mode": "replay"' in response.text
+
+
+def test_unknown_ns_symbol_is_rejected_before_a_session(monkeypatch):
+    monkeypatch.setattr("tickers.yahoo_has_prices", lambda symbol: symbol != "WELSPUN.NS")
+    client = TestClient(app)
+    response = client.post(
+        "/api/run",
+        json={
+            "prompt": "Backtest a 20/50 SMA crossover on WELSPUN.NS for 2024 vs buy-and-hold",
+            "provider": "xai",
+            "mode": "auto",
+        },
+    )
+    assert response.status_code == 400
+    assert response.json()["detail"] == (
+        "No price data for WELSPUN.NS on Yahoo Finance. Check the ticker symbol."
+    )
+
+
+def test_replay_does_not_look_up_yahoo(monkeypatch):
+    monkeypatch.setenv("VIBE_DESK_REPLAY_DELAY", "0")
+
+    def boom(_symbol: str) -> bool:
+        raise AssertionError("replay must not call Yahoo")
+
+    monkeypatch.setattr("tickers.yahoo_has_prices", boom)
+    client = TestClient(app)
+    response = client.post(
+        "/api/run",
+        json={
+            "prompt": "Backtest WELSPUN.NS",
+            "provider": "xai",
+            "mode": "replay",
+        },
+    )
+    assert response.status_code == 200
+    assert "event: result" in response.text
+    assert result_model(response.text) == "illustrative"
+
+
+def result_model(text: str) -> str:
+    for block in text.split("\n\n"):
+        event = "message"
+        data_line = ""
+        for line in block.splitlines():
+            if line.startswith("event:"):
+                event = line[6:].strip()
+            elif line.startswith("data:"):
+                data_line = line[5:].strip()
+        if event == "meta" and data_line:
+            return json.loads(data_line)["model"]
+    return ""
+
+
+def test_health_lists_anthropic_models(monkeypatch):
+    monkeypatch.delenv("ANTHROPIC_MODEL", raising=False)
+    client = TestClient(app)
+    anthropic = next(item for item in client.get("/api/health").json()["providers"] if item["id"] == "anthropic")
+    assert anthropic["model"] == "claude-sonnet-5-5"
+    assert [item["id"] for item in anthropic["models"]] == [
+        "claude-sonnet-5-5",
+        "claude-opus-5-5",
+        "claude-fable-5-2",
+    ]
+    monkeypatch.setenv("ANTHROPIC_MODEL", "claude-opus-5-5")
+    anthropic = next(item for item in client.get("/api/health").json()["providers"] if item["id"] == "anthropic")
+    assert anthropic["model"] == "claude-opus-5-5"
 
 
 def test_live_without_a_key_is_rejected(monkeypatch):

@@ -20,6 +20,8 @@ import re
 from pathlib import Path
 from typing import Any
 
+from report import build_report
+
 _FEE_KEYS = (
     "fees",
     "total_fees",
@@ -207,6 +209,16 @@ def parse_run(
     }
 
 
+def _with_report(
+    result: dict[str, Any],
+    fills: list[dict[str, Any]] | None = None,
+    benchmark: dict[str, Any] | None = None,
+    benchmark_fills: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    result["report"] = build_report(result, fills, benchmark, benchmark_fills)
+    return result
+
+
 _BH_NAMES = {"bh", "bnh", "buyhold", "buy_and_hold", "buy-and-hold", "benchmark", "hold"}
 _SKIP_DIRS = {"artifacts", "code", "logs", "log", "__pycache__"}
 _INDICATOR_RE = re.compile(r"rolling|ewm|crossover|\bsma\b|\bema\b|macd|\brsi\b|\.shift\s*\(", re.IGNORECASE)
@@ -343,21 +355,25 @@ def resolve_result(payload: dict[str, Any], code: dict[str, Any] | str | None = 
     directory = payload.get("run_directory") or payload.get("run_dir")
     root = Path(directory) if isinstance(directory, str) and directory else None
     if root is None or not root.is_dir():
-        return parse_run(payload, code)
+        return _with_report(parse_run(payload, code))
     primary, benchmark = choose_strategy(root)
     if primary == root and benchmark is None:
-        return parse_run(payload, code, fills=_read_fills(root))
+        return _with_report(parse_run(payload, code, fills=_read_fills(root)), _read_fills(root))
     primary_code = _read_code(primary)
     if not primary_code and primary == root:
         primary_code_value: dict[str, Any] | str | None = code
     else:
         primary_code_value = primary_code
-    parsed = parse_run(_payload_from_dir(primary), primary_code_value, fills=_read_fills(primary))
+    primary_fills = _read_fills(primary)
+    parsed = parse_run(_payload_from_dir(primary), primary_code_value, fills=primary_fills)
     if payload.get("run_id"):
         parsed["run_id"] = payload["run_id"]
     parsed["strategy_label"] = strategy_label(primary, parsed["code"])
+    baseline = None
+    benchmark_fills: list[dict[str, Any]] | None = None
     if benchmark is not None:
-        baseline = parse_run(_payload_from_dir(benchmark), _read_code(benchmark))
+        benchmark_fills = _read_fills(benchmark)
+        baseline = parse_run(_payload_from_dir(benchmark), _read_code(benchmark), fills=benchmark_fills)
         _overlay_benchmark(parsed, baseline["equity"])
         parsed["benchmark_label"] = "Buy and hold"
         parsed["metrics"]["benchmark_return"] = baseline["metrics"]["total_return"]
@@ -367,4 +383,4 @@ def resolve_result(payload: dict[str, Any], code: dict[str, Any] | str | None = 
             parsed["sources"] = parent["sources"]
         if not parsed["codes"]:
             parsed["codes"] = parent["codes"]
-    return parsed
+    return _with_report(parsed, primary_fills, baseline, benchmark_fills)

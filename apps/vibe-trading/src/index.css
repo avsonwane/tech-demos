@@ -39,6 +39,14 @@
     --sidebar-accent-foreground: oklch(0.214 0.009 43.1);
     --sidebar-border: oklch(0.922 0.005 34.3);
     --sidebar-ring: oklch(0.714 0.014 41.2);
+    --gain: #166534;
+    --gain-bg: #f0fdf4;
+    --loss: #991b1b;
+    --loss-bg: #fef2f2;
+    --amber: #92400e;
+    --amber-bg: #fffbeb;
+    --benchmark-line: #57534e;
+    --drawdown-fill: rgba(153, 27, 27, 0.2);
 }
 
 .dark {
@@ -73,6 +81,14 @@
     --sidebar-accent-foreground: oklch(0.986 0.002 67.8);
     --sidebar-border: oklch(1 0 0 / 10%);
     --sidebar-ring: oklch(0.547 0.021 43.1);
+    --gain: #86efac;
+    --gain-bg: #052e16;
+    --loss: #fecaca;
+    --loss-bg: #450a0a;
+    --amber: #fcd34d;
+    --amber-bg: #451a03;
+    --benchmark-line: #d6d3d1;
+    --drawdown-fill: rgba(254, 202, 202, 0.25);
 }
 
 @theme inline {

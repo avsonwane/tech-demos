@@ -42,7 +42,7 @@ The form lists xAI, OpenAI, and Anthropic. The first with a key is the default, 
 | --- | --- |
 | xAI (`XAI_API_KEY`) | `LANGCHAIN_PROVIDER=openai`, `OPENAI_API_KEY` set from `XAI_API_KEY`, `OPENAI_BASE_URL=https://api.x.ai/v1`, model `grok-4.6`. The 0.1.19 catalog has no xAI provider. |
 | OpenAI (`OPENAI_API_KEY`) | `LANGCHAIN_PROVIDER=openai`, `OPENAI_BASE_URL=https://api.openai.com/v1`, model `gpt-5.5` (the catalog default). |
-| Anthropic (`ANTHROPIC_API_KEY`) | `LANGCHAIN_PROVIDER=anthropic`, model `claude-sonnet-5-5` (the 0.1.19 catalog default is `claude-sonnet-4-6`). Optional `ANTHROPIC_WORKSPACE_ID` is sent as `anthropic-workspace-id`. The 0.1.19 Anthropic builder does not take that header, so the serve launcher adds it on `ChatAnthropic`. The same wrapper drops non-default `temperature`, `top_p`, and `top_k` for `claude-sonnet-5-5` and `claude-fable-5*`. |
+| Anthropic (`ANTHROPIC_API_KEY`) | `LANGCHAIN_PROVIDER=anthropic`. The page offers `claude-sonnet-5-5` (default), `claude-opus-5-5`, and `claude-fable-5-2`. `ANTHROPIC_MODEL` overrides the default; the page selection wins for that run. Opus and Fable cost several times more than Sonnet. Optional `ANTHROPIC_WORKSPACE_ID` is sent as `anthropic-workspace-id`. Every `claude-sonnet-5*`, `claude-opus-5*`, `claude-fable-5*`, and `claude-haiku-5*` model is sent with no `temperature`, `top_p`, or `top_k`. A 400 `invalid_request_error` that mentions those fields is retried once without them. Claude 4 keeps its sampling params. |
 
 ## Session and result contract (0.1.19)
 
@@ -73,7 +73,11 @@ apps/vibe-trading/
 
 ## Testing and hooks
 
-Pytest covers the mocked session proxy, the phase reducer (including a finished run with no separate data-fetch tool), the run parser, the nested `sma/` fixture, fill-fee summing, the provider env mapping, the Anthropic workspace header, the sonnet-5-5 sampling drop, the replay stream, and that `RELIANCE.NS` still classifies as `india_equity`. No test calls an LLM or the network. No git hooks: the repo has no hook runner.
+Pytest covers the mocked session proxy, the phase reducer (including a finished run with no separate data-fetch tool), the run parser, the nested `sma/` fixture, fill-fee summing, the provider env mapping, the Anthropic workspace header, Claude 5 sampling removal, the 400 sampling retry, the WELSPUN.NS Yahoo rejection, the replay stream, and that `RELIANCE.NS` still classifies as `india_equity`. No test calls an LLM or the network. No git hooks: the repo has no hook runner.
+
+Ports default to desk `8010`, Vite `5174`, and Vibe-Trading `8899` (`DESK_PORT`, `VITE_PORT`, `VIBE_PORT`). `bun run dev` runs `bun install` when `node_modules` is missing, and a busy port exits with `lsof -ti tcp:<port> | xargs kill`.
+
+The review report is computed from equity, trades, and fills. Sharpe is copied from the run metrics when the equity file is not a daily series. Sortino, volatility, and a monthly cell stay blank in that case. The RELIANCE fixture is that case.
 
 ## Deferred
 
