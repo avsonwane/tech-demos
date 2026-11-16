@@ -64,7 +64,10 @@ export function Results({ result, model }: { result: DeskResult; model?: string 
             {range ? ` · ${range}` : ""}
           </p>
           {result.benchmark_label ? (
-            <p className="text-muted-foreground">Benchmark: {result.benchmark_label}</p>
+            <p className="text-muted-foreground">
+              Benchmark: {result.benchmark_label}
+              {result.report?.notes.benchmark_source ? ` · ${result.report.notes.benchmark_source}` : ""}
+            </p>
           ) : null}
           <p className="text-muted-foreground">
             Data source: {result.sources.length > 0 ? result.sources.join(", ") : "Not recorded"}

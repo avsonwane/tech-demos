@@ -38,31 +38,75 @@ def _sorted_equity(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return sorted(usable, key=lambda point: str(point.get("time")))
 
 
-def _endpoint_return(points: list[dict[str, Any]]) -> float | None:
-    if len(points) < 2:
+def _positive(value: Any) -> float | None:
+    if not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
         return None
-    start = float(points[0]["equity"])
+    return float(value)
+
+
+def _capital_base(points: list[dict[str, Any]], result: dict[str, Any]) -> float | None:
+    """Starting capital from the run, or the first equity bar when the run omitted it."""
+    capital = _positive(result.get("initial_cash"))
+    if capital is not None:
+        return capital
+    if not points:
+        return None
+    return _positive(points[0].get("equity"))
+
+
+def _total_return(points: list[dict[str, Any]], base: float | None) -> float | None:
+    if len(points) < 2 or base is None or base == 0:
+        return None
     end = float(points[-1]["equity"])
-    if start == 0:
+    if not math.isfinite(end):
         return None
-    return end / start - 1
+    return end / base - 1
 
 
-def _cagr(points: list[dict[str, Any]]) -> float | None:
-    if len(points) < 2:
+def _cagr(
+    points: list[dict[str, Any]],
+    base: float | None,
+    daily: bool,
+    bars_per_year: float | None,
+) -> float | None:
+    if len(points) < 2 or base is None or base <= 0:
         return None
+    end = float(points[-1]["equity"])
+    if end <= 0 or not math.isfinite(end):
+        return None
+    growth = end / base
+    if daily and bars_per_year and bars_per_year > 0:
+        try:
+            annual = growth ** (float(bars_per_year) / len(points)) - 1
+        except OverflowError:
+            return None
+        return annual if math.isfinite(annual) else None
     start_day = _day(points[0].get("time"))
     end_day = _day(points[-1].get("time"))
-    start = float(points[0]["equity"])
-    end = float(points[-1]["equity"])
     if start_day is None or end_day is None or end_day <= start_day:
-        return None
-    if start <= 0 or end <= 0:
         return None
     years = (end_day - start_day).days / 365.25
     if years <= 0:
         return None
-    return (end / start) ** (1 / years) - 1
+    annual = growth ** (1 / years) - 1
+    return annual if math.isfinite(annual) else None
+
+
+def _path_drawdown(points: list[dict[str, Any]], base: float | None) -> float | None:
+    """Max drawdown with the starting capital as the first peak."""
+    if not points or base is None or base <= 0:
+        return None
+    peak = base
+    worst = 0.0
+    for point in points:
+        equity = float(point["equity"])
+        if not math.isfinite(equity):
+            continue
+        peak = max(peak, equity)
+        if peak == 0:
+            continue
+        worst = min(worst, equity / peak - 1)
+    return worst
 
 
 def _min_drawdown(points: list[dict[str, Any]]) -> float | None:
@@ -361,19 +405,35 @@ def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values)
 
 
-def _longest_flat(trips: list[dict[str, Any]]) -> tuple[str, str] | None:
-    best: tuple[str, str] | None = None
-    best_days = 0
+def _longest_flat(
+    trips: list[dict[str, Any]],
+    first: date | None,
+    last: date | None,
+) -> dict[str, str] | None:
+    """The longest stretch with no position, including after the last exit."""
+    spans: list[tuple[date, date, str]] = []
+    if trips and first is not None:
+        entry = _day(trips[0].get("entry_time"))
+        if entry is not None and entry > first:
+            spans.append((first, entry, "entry"))
+    elif not trips and first is not None and last is not None and last > first:
+        spans.append((first, last, "bar"))
     for previous, nxt in zip(trips, trips[1:]):
+        if previous.get("open"):
+            continue
         exit_day = _day(previous.get("exit_time"))
         entry = _day(nxt.get("entry_time"))
         if exit_day is None or entry is None or entry <= exit_day:
             continue
-        span = (entry - exit_day).days
-        if span > best_days:
-            best_days = span
-            best = (exit_day.isoformat(), entry.isoformat())
-    return best
+        spans.append((exit_day, entry, "entry"))
+    if trips and last is not None and not trips[-1].get("open"):
+        exit_day = _day(trips[-1].get("exit_time"))
+        if exit_day is not None and last > exit_day:
+            spans.append((exit_day, last, "bar"))
+    if not spans:
+        return None
+    start, end, kind = max(spans, key=lambda item: (item[1] - item[0]).days)
+    return {"start": start.isoformat(), "end": end.isoformat(), "kind": kind}
 
 
 def _side(result: dict[str, Any], fills: list[dict[str, Any]]) -> dict[str, Any]:
@@ -388,8 +448,11 @@ def _side(result: dict[str, Any], fills: list[dict[str, Any]]) -> dict[str, Any]
     losses = [value for value in pnls if value < 0]
     returns = _simple_returns(points)
     daily = _regular_daily(points)
-    periods = 252.0 if daily else None
-    total_return = _endpoint_return(points)
+    periods = _positive(result.get("bars_per_year")) if daily else None
+    if daily and periods is None:
+        periods = 252.0
+    base = _capital_base(points, result)
+    total_return = _total_return(points, base)
     if total_return is None and isinstance(metrics.get("total_return"), (int, float)):
         total_return = float(metrics["total_return"])
     sharpe = None
@@ -397,7 +460,9 @@ def _side(result: dict[str, Any], fills: list[dict[str, Any]]) -> dict[str, Any]
     if isinstance(metrics.get("sharpe"), (int, float)) and math.isfinite(metrics["sharpe"]):
         sharpe = float(metrics["sharpe"])
         sharpe_from_metrics = True
-    drawdown = _min_drawdown(points)
+    drawdown = _path_drawdown(points, base) if daily else None
+    if drawdown is None:
+        drawdown = _min_drawdown(points)
     if drawdown is None and isinstance(metrics.get("max_drawdown"), (int, float)):
         drawdown = float(metrics["max_drawdown"])
     win_rate = (len(wins) / len(closed)) if closed else None
@@ -422,7 +487,7 @@ def _side(result: dict[str, Any], fills: list[dict[str, Any]]) -> dict[str, Any]
         fees_pct = float(fees) / realized
     return {
         "total_return": total_return,
-        "cagr": _cagr(points),
+        "cagr": _cagr(points, base, daily, periods),
         "sharpe": sharpe,
         "sharpe_from_metrics": sharpe_from_metrics,
         "sortino": _sortino(returns, periods) if daily else None,
@@ -442,10 +507,11 @@ def _side(result: dict[str, Any], fills: list[dict[str, Any]]) -> dict[str, Any]
         "trips": trips,
         "drawdowns": drawdown_periods(points),
         "monthly": monthly_returns(points),
-        "starting_capital": float(points[0]["equity"]) if points else None,
+        "starting_capital": base,
         "first_bar": first.isoformat() if first else None,
         "last_bar": last.isoformat() if last else None,
         "bars": len(points),
+        "frequency": "daily" if daily else ("irregular" if points else None),
         "realized_pnl": realized,
     }
 
@@ -538,19 +604,107 @@ def _summary(result: dict[str, Any], strategy: dict[str, Any], benchmark: dict[s
     elif closed:
         wins = sum(1 for trip in closed if float(trip["pnl"]) > 0)
         parts.append(f"{wins} of {len(closed)} closed trades made money.")
-    flat = _longest_flat(strategy["trips"])
-    if flat:
-        parts.append(f"The book was flat from {flat[0]} until the next entry on {flat[1]}.")
+    flat = _longest_flat(strategy["trips"], _day(strategy.get("first_bar")), _day(strategy.get("last_bar")))
+    if flat and flat["kind"] == "bar":
+        parts.append(f"The book was flat from {flat['start']} through {flat['end']}.")
+    elif flat:
+        parts.append(f"The book was flat from {flat['start']} until the next entry on {flat['end']}.")
     if strategy["open_trades"]:
         noun = "trade is" if strategy["open_trades"] == 1 else "trades are"
         parts.append(f"{strategy['open_trades']} {noun} still open at the last bar, so the realized return excludes them.")
     return " ".join(parts)
 
 
-def _notes(result: dict[str, Any], strategy: dict[str, Any]) -> dict[str, Any]:
+_RATE_FIELDS = (
+    ("commission_rate", "commission", False),
+    ("commission", "commission", False),
+    ("slippage_bps", "slippage", True),
+    ("slippage", "slippage", False),
+    ("taker_rate", "taker", False),
+    ("maker_rate", "maker", False),
+    ("fee_bps", "fee", True),
+    ("fee_rate", "fee", False),
+    ("in_brokerage", "brokerage", False),
+    ("in_stt", "STT", False),
+    ("in_exchange_txn", "exchange", False),
+    ("in_sebi_fee", "SEBI", False),
+    ("in_stamp_duty", "stamp duty", False),
+    ("in_gst", "GST", False),
+    ("in_dp_charge", "DP charge", False),
+    ("hk_commission", "HK commission", False),
+    ("ca_commission", "CA commission", False),
+)
+
+
+def _rate_phrase(label: str, value: Any, already_bps: bool) -> str | None:
+    if not isinstance(value, (int, float)) or not math.isfinite(value):
+        return None
+    if already_bps:
+        return f"{label} {value:g} bps"
+    magnitude = abs(float(value))
+    if magnitude < 0.05:
+        return f"{label} {float(value) * 10000:.4g} bps"
+    if magnitude < 1:
+        return f"{label} {float(value) * 100:.4g}%"
+    return f"{label} {float(value):g}"
+
+
+def _rates_from(mapping: Any) -> list[str]:
+    if not isinstance(mapping, dict):
+        return []
+    phrases: list[str] = []
+    for key, label, already_bps in _RATE_FIELDS:
+        if key not in mapping:
+            continue
+        phrase = _rate_phrase(label, mapping.get(key), already_bps)
+        if phrase and phrase not in phrases:
+            phrases.append(phrase)
+    return phrases
+
+
+def _fee_model(result: dict[str, Any], fills: list[dict[str, Any]]) -> str | None:
+    phrases = _rates_from(result.get("config")) or _rates_from(result.get("backtest"))
+    if not phrases:
+        for fill in fills:
+            phrases = _rates_from(fill)
+            if phrases:
+                break
+    if phrases:
+        return ", ".join(phrases)
+    rates: list[float] = []
+    for fill in fills:
+        fee = fill.get("fee", fill.get("commission"))
+        notional = fill.get("notional")
+        if (
+            isinstance(fee, (int, float))
+            and isinstance(notional, (int, float))
+            and math.isfinite(fee)
+            and math.isfinite(notional)
+            and notional > 0
+        ):
+            rates.append(float(fee) / float(notional))
+    if not rates or max(rates) - min(rates) > 0.0001:
+        return None
+    return f"effective {rates[0] * 10000:.4g} bps from fills"
+
+
+def _warmup(result: dict[str, Any], strategy: dict[str, Any]) -> str | None:
+    start = _day(result.get("start_date"))
+    first = _day(strategy.get("first_bar"))
+    if start is None or first is None or first <= start:
+        return None
+    return f"{start.isoformat()} to {first.isoformat()}"
+
+
+def _notes(result: dict[str, Any], strategy: dict[str, Any], fills: list[dict[str, Any]]) -> dict[str, Any]:
+    frequency = strategy.get("frequency")
     sharpe_note = None
-    if strategy["sharpe_from_metrics"]:
-        sharpe_note = "Sharpe is the run's recorded metric. The equity file is not a regular daily series, so it was not recomputed."
+    if strategy["sharpe_from_metrics"] and frequency != "daily":
+        sharpe_note = (
+            "Sharpe is the run's recorded metric. The equity file is not a regular daily series, so it was not recomputed."
+        )
+    elif strategy["sharpe_from_metrics"]:
+        sharpe_note = "Sharpe is the run's recorded metric."
     return {
         "sources": list(result.get("sources") or []),
         "start_date": result.get("start_date"),
@@ -558,11 +712,13 @@ def _notes(result: dict[str, Any], strategy: dict[str, Any]) -> dict[str, Any]:
         "first_bar": strategy["first_bar"],
         "last_bar": strategy["last_bar"],
         "bars": strategy["bars"],
-        "warmup": None,
+        "frequency": frequency,
+        "warmup": _warmup(result, strategy),
         "starting_capital": strategy["starting_capital"],
-        "fee_model": None,
+        "fee_model": _fee_model(result, fills),
         "fees": strategy["fees"],
         "sharpe_note": sharpe_note,
+        "benchmark_source": result.get("benchmark_source"),
     }
 
 
@@ -659,9 +815,11 @@ def _markdown(result: dict[str, Any], report: dict[str, Any]) -> str:
             f"- Source: {', '.join(notes['sources']) if notes['sources'] else _MISSING}",
             f"- Requested range: {notes['start_date'] or _MISSING} to {notes['end_date'] or _MISSING}",
             f"- Equity bars: {notes['first_bar'] or _MISSING} to {notes['last_bar'] or _MISSING} ({notes['bars']})",
+            f"- Frequency: {notes['frequency'] or _MISSING}",
             f"- Warmup: {_MISSING if notes['warmup'] is None else notes['warmup']}",
             f"- Starting capital: {_money(notes['starting_capital'], False)}",
             f"- Fee model: {_MISSING if notes['fee_model'] is None else notes['fee_model']}",
+            f"- Benchmark source: {notes['benchmark_source'] or _MISSING}",
             f"- Fees: {_money(notes['fees'], False)}",
             "- Fees / PnL divides fill fees by closed-trade PnL. Those columns are not rescaled.",
             "- A month is colored only when that month and the previous month both have an equity bar.",
@@ -706,6 +864,67 @@ def _csv(trips: list[dict[str, Any]]) -> str:
     return buffer.getvalue()
 
 
+def _benchmark_points(rows: list[dict[str, Any]], value_key: str) -> list[dict[str, Any]]:
+    points: list[dict[str, Any]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        stamp = row.get("time") or row.get("timestamp")
+        value = row.get(value_key)
+        if value_key == "close" and value is None:
+            value = row.get("price")
+        if isinstance(value, str):
+            try:
+                value = float(value)
+            except ValueError:
+                value = None
+        if stamp is None or not isinstance(value, (int, float)) or not math.isfinite(value):
+            continue
+        points.append({"time": str(stamp), "equity": float(value), "drawdown": None})
+    return _sorted_equity(points)
+
+
+def _scaled_bars(rows: list[dict[str, Any]], base: float | None) -> list[dict[str, Any]]:
+    """Buy-and-hold equity from close prices, seeded at the starting capital."""
+    closes = _benchmark_points(rows, "close")
+    if len(closes) < 2:
+        return []
+    first = float(closes[0]["equity"])
+    if first <= 0:
+        return []
+    seed = base if base and base > 0 else first
+    return [
+        {"time": point["time"], "equity": seed * float(point["equity"]) / first, "drawdown": None}
+        for point in closes
+    ]
+
+
+def _fallback_benchmark(result: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
+    """Use the equity benchmark column, then a buy-and-hold computed from price bars."""
+    column = _benchmark_points(result.get("equity") or [], "benchmark")
+    source = None
+    points: list[dict[str, Any]] = []
+    if len(column) >= 2:
+        points = column
+        source = "equity benchmark column"
+    else:
+        points = _scaled_bars(result.get("price_bars") or [], _positive(result.get("initial_cash")))
+        if len(points) >= 2:
+            source = "price bars"
+    if source is None:
+        return None, None
+    return (
+        {
+            "equity": points,
+            "trades": [],
+            "metrics": {},
+            "initial_cash": result.get("initial_cash"),
+            "bars_per_year": result.get("bars_per_year"),
+        },
+        source,
+    )
+
+
 def build_report(
     result: dict[str, Any],
     fills: list[dict[str, Any]] | None = None,
@@ -713,17 +932,27 @@ def build_report(
     benchmark_fills: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     """Return the review payload, including the Markdown download and the trades CSV."""
-    strategy = _side(result, [row for row in (fills or []) if isinstance(row, dict)])
+    strategy_fills = [row for row in (fills or []) if isinstance(row, dict)]
+    strategy = _side(result, strategy_fills)
     other = None
+    source = result.get("benchmark_source") if isinstance(result.get("benchmark_source"), str) else None
     if benchmark is not None:
         other = _side(benchmark, [row for row in (benchmark_fills or []) if isinstance(row, dict)])
+        source = source or "buy-and-hold run"
+    else:
+        fallback, fallback_source = _fallback_benchmark(result)
+        if fallback is not None:
+            other = _side(fallback, [])
+            source = fallback_source
+    noted = dict(result)
+    noted["benchmark_source"] = source
     report = {
         "summary": _summary(result, strategy, other),
         "comparison": _comparison(strategy, other),
         "monthly": strategy["monthly"],
         "round_trips": strategy["trips"],
         "drawdowns": strategy["drawdowns"],
-        "notes": _notes(result, strategy),
+        "notes": _notes(noted, strategy, strategy_fills),
     }
     report["markdown"] = _markdown(result, report)
     report["trades_csv"] = _csv(strategy["trips"])

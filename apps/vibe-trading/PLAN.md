@@ -77,7 +77,7 @@ Pytest covers the mocked session proxy, the phase reducer (including a finished 
 
 Ports default to desk `8010`, Vite `5174`, and Vibe-Trading `8899` (`DESK_PORT`, `VITE_PORT`, `VIBE_PORT`). `bun run dev` runs `bun install` when `node_modules` is missing, and a busy port exits with `lsof -ti tcp:<port> | xargs kill`.
 
-The review report is computed from equity, trades, and fills. Sharpe is copied from the run metrics when the equity file is not a daily series. Sortino, volatility, and a monthly cell stay blank in that case. The RELIANCE fixture is that case.
+The review report is computed from equity, trades, and fills. Return, CAGR, and max drawdown use the run's initial cash when the card or config records it. Sharpe is copied from the run metrics. The "not a daily series" note is used only when the bars fail the daily check. Sortino, volatility, and a monthly cell stay blank in that case. The nested RELIANCE fixture is that case. A second fixture, `reliance_daily/`, is a flat layout with a weekday equity file, a benchmark column, a fee schedule, and a warmup gap.
 
 ## Deferred
 

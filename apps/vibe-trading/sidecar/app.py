@@ -88,22 +88,31 @@ class RunIn(BaseModel):
     provider: str = "xai"
     mode: str = "auto"
     model: str = ""
+    sample: str = ""
 
 
-def _sample() -> dict[str, Any]:
-    return json.loads(SAMPLE_PATH.read_text(encoding="utf-8"))
+def _sample(name: str = "") -> dict[str, Any]:
+    path = SIDECAR / ("sample_daily.json" if name == "daily" else "sample_run.json")
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
-def _replay_result() -> dict[str, Any]:
-    """Replay the saved RELIANCE layout: SMA headline, buy-and-hold benchmark."""
+def _replay_result(name: str = "") -> dict[str, Any]:
+    """Replay a saved RELIANCE layout. ``daily`` is the flat run with a daily equity file."""
     from results import resolve_result
 
-    fixture = SIDECAR / "fixtures" / "reliance_sma"
+    if name == "daily":
+        fixture = SIDECAR / "fixtures" / "reliance_daily"
+        run_id = "reliance-daily"
+    else:
+        fixture = SIDECAR / "fixtures" / "reliance_sma"
+        run_id = "20261115_125847_46_bb8d5a"
+    sample = _sample(name)
     resolved = resolve_result(
         {
-            "run_id": "20261115_125847_46_bb8d5a",
+            "run_id": run_id,
             "status": "illustrative",
             "run_directory": str(fixture),
+            "prompt": sample.get("prompt") or "",
         }
     )
     resolved["illustrative"] = True
@@ -275,12 +284,14 @@ def _prepare(body: RunIn) -> dict[str, Any]:
         reason = f"{spec['env']} is not set, so this is the shipped sample instead of a live session."
     else:
         reason = None
+    sample = body.sample if body.sample in {"", "reliance", "daily"} else ""
     return {
         "replay": replay,
         "reason": reason,
         "prompt": prompt,
         "provider": body.provider,
         "model": model,
+        "sample": sample if replay else "",
     }
 
 
@@ -310,7 +321,8 @@ def _meta(prepared: dict[str, Any], sample: dict[str, Any] | None) -> dict[str, 
 
 
 def _iterate(prepared: dict[str, Any]):
-    sample = _sample() if prepared["replay"] else None
+    sample_name = prepared.get("sample") or ""
+    sample = _sample(sample_name) if prepared["replay"] else None
     yield "meta", _meta(prepared, sample)
     if prepared["replay"]:
         assert sample is not None
@@ -321,7 +333,7 @@ def _iterate(prepared: dict[str, Any]):
             yield "phase", phase
         if delay > 0:
             time.sleep(delay)
-        yield "result", _replay_result()
+        yield "result", _replay_result(sample_name)
         yield "done", {"mode": "replay"}
         return
 

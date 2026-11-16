@@ -38,7 +38,7 @@ lsof -ti tcp:8010 | xargs kill
 
 Replace `8010` with the port from the message. The same line is printed for the Vite port and the Vibe-Trading port.
 
-Open the page and click **Run**. With no LLM key, the run is the shipped sample and the page shows a replay banner. **Replay sample** plays that sample even when a key is set.
+Open the page and click **Run**. With no LLM key, the run is the shipped sample and the page shows a replay banner. **Replay sample** plays that sample even when a key is set. **Daily sample** plays a flat layout whose equity file is a daily series, so the report can be reviewed with a full year of bars.
 
 ## Keys
 
@@ -54,7 +54,11 @@ Do not commit `.env`. Session files and the serve log stay under `sidecar/.run-d
 
 Equity versus a dashed buy-and-hold line, a red-shaded drawdown, and buy and sell marks on the curve. Gains are green and losses are red, each with a sign or an arrow. Sharpe, max drawdown, and win rate also carry a low / mid / high or shallow / moderate / deep label.
 
-Below the charts, a report compares the strategy with buy-and-hold (return, CAGR, Sharpe, Sortino, max drawdown, volatility, win rate, profit factor, average win and loss, best and worst trade, time in market, closed trades, and fees as a share of PnL). It also has a monthly-return heatmap, round trips, the largest drawdown periods, a summary computed from those numbers, and the data notes (source, date range, warmup, starting capital, fee model). **Download report** saves Markdown. **Download trades CSV** saves the round trips. A figure that the equity, trades, and fills files cannot support is an em dash. Sharpe is copied from the run metrics when the equity file is not a daily series. Sortino, volatility, and a monthly cell stay blank in that case. The RELIANCE sample is that case: three equity bars, so the heatmap is blank and the summary is the 17.64 point gap versus buy-and-hold.
+Below the charts, a report compares the strategy with buy-and-hold (return, CAGR, Sharpe, Sortino, max drawdown, volatility, win rate, profit factor, average win and loss, best and worst trade, time in market, closed trades, and fees as a share of PnL). It also has a monthly-return heatmap, round trips, the largest drawdown periods, a summary computed from those numbers, and the data notes (source, date range, frequency, warmup, starting capital, fee model, benchmark source). **Download report** saves Markdown. **Download trades CSV** saves the round trips. A figure that the equity, trades, and fills files cannot support is an em dash.
+
+Return, CAGR, and max drawdown use the run's initial cash (`initial_cash` on the run card or in `config.json`) as the base, so the report matches the run card. When that figure is missing, the base is the first equity bar. Sharpe is copied from the run metrics. The note that the file is not a daily series appears only when the bars are not a daily series. Sortino, volatility, and a monthly cell stay blank in that case. The RELIANCE sample is that case: three equity bars, so the heatmap is blank and the summary is the 17.64 point gap versus buy-and-hold. Warmup is the requested start through the first equity bar. The fee model is the rate or bps recorded on the config or the fills, and stays a dash only when neither has one. The summary names the longest stretch out of the market, including the stretch after the last exit.
+
+When the run has no buy-and-hold directory, the benchmark column, the comparison, and the chart use the equity file's `benchmark_equity` column. If that column is empty and `artifacts/bars.csv` has closes, the benchmark is a buy-and-hold computed from those closes. The card title comes from the strategy code, or from the prompt when the code does not name one.
 
 Vibe-Trading 0.1.19’s summary metrics do not include a fee total. The desk sums `fee` or `commission` on the trade rows, and when those are absent it sums `artifacts/fills.jsonl`.
 
@@ -69,6 +73,8 @@ Before a live or auto run, a symbol with an exchange suffix is checked with a sh
 ## Sample data
 
 With no key, Replay plays `sidecar/fixtures/reliance_sma/`. That directory is the nested layout from a live RELIANCE.NS 2024 session: buy-and-hold at the root (return −6.04%) and the 20/50 SMA under `sma/` (return +11.6%, Sharpe 0.80, max drawdown −9.59%, 3 trades, fills summing to 7,355). The page shows the SMA as the headline. It does not call a model or refetch bars. `vibe-trading run` still needs a model, and this environment has no key, so a new live session was not run here.
+
+**Daily sample** plays `sidecar/fixtures/reliance_daily/`. That layout has no `sma/` or `bh/` directory. The engine is `code/signal_engine.py` at the run root, initial cash is 1,000,000, and buy-and-hold is the `benchmark_equity` column. The equity file is one bar per weekday in 2024. The banner says it is a saved layout, not a live session.
 
 `bun run dev` starts `vibe-trading serve` on 127.0.0.1:8899 (or `VIBE_PORT`) and waits on `GET /health`. The package has no `frontend/dist`, so serve prints “No frontend build found” at startup and `GET /` returns 404. This desk does not use that UI and does not request `/`.
 

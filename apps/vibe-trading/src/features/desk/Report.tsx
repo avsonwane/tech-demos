@@ -71,6 +71,7 @@ export function ReportView({ report, strategy, benchmark }: { report: DeskReport
           <table className="w-full text-left text-sm">
             <caption className="mb-2 text-left text-xs tracking-widest uppercase text-muted-foreground">
               Strategy vs benchmark
+              {notes.benchmark_source ? ` · ${notes.benchmark_source}` : ""}
             </caption>
             <thead className="text-xs tracking-widest uppercase text-muted-foreground">
               <tr>
@@ -239,11 +240,15 @@ export function ReportView({ report, strategy, benchmark }: { report: DeskReport
                 Requested range: {notes.start_date ?? "—"} to {notes.end_date ?? "—"}
               </p>
               <p>
-                Equity bars: {notes.first_bar ?? "—"} to {notes.last_bar ?? "—"} ({notes.bars}), including warmup:{" "}
-                {notes.warmup ?? "—"}
+                Equity bars: {notes.first_bar ?? "—"} to {notes.last_bar ?? "—"} ({notes.bars}), frequency:{" "}
+                {notes.frequency ?? "—"}, warmup: {notes.warmup ?? "—"}
               </p>
-              <p>Starting capital: {formatStat(notes.starting_capital, "money", false)}</p>
+              <p>
+                Starting capital: {formatStat(notes.starting_capital, "money", false)}
+                {notes.starting_capital != null ? ". Returns, CAGR, and max drawdown use this as the base." : ""}
+              </p>
               <p>Fee model: {notes.fee_model ?? "—"}</p>
+              {notes.benchmark_source ? <p>Benchmark source: {notes.benchmark_source}</p> : null}
               <p>Fees: {formatStat(notes.fees, "money", false)}</p>
               {notes.sharpe_note ? <p>{notes.sharpe_note}</p> : null}
               <p>Fees / PnL divides fill fees by closed-trade PnL. Those columns are not rescaled.</p>

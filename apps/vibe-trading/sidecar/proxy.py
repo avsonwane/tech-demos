@@ -129,4 +129,7 @@ def drive_live(client: VibeClient, prompt: str) -> Iterator[tuple[str, dict[str,
         raise RuntimeError("The session ended without a backtest run id.")
     payload = client.get_run(run_id)
     code = client.get_code(run_id)
+    if isinstance(payload, dict):
+        payload = dict(payload)
+        payload["prompt"] = prompt
     yield "result", resolve_result(payload, code)

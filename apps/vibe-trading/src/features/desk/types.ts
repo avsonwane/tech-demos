@@ -102,11 +102,13 @@ export type ReportNotes = {
   first_bar: string | null
   last_bar: string | null
   bars: number
+  frequency: string | null
   warmup: string | null
   starting_capital: number | null
   fee_model: string | null
   fees: number | null
   sharpe_note: string | null
+  benchmark_source: string | null
 }
 
 export type DeskReport = {
@@ -151,6 +153,7 @@ export type RunRequest = {
   provider: string
   mode: "auto" | "live" | "replay"
   model?: string
+  sample?: string
 }
 
 export type SseMessage =

@@ -134,6 +134,16 @@ def _trades(payload: dict[str, Any]) -> list[dict[str, Any]]:
     return trades
 
 
+def _cash_from_mapping(mapping: Any) -> float | None:
+    if not isinstance(mapping, dict):
+        return None
+    for key in ("initial_cash", "initial_capital", "starting_capital"):
+        value = _number(mapping.get(key))
+        if value is not None and value > 0:
+            return value
+    return None
+
+
 def _codes(backtest: dict[str, Any]) -> list[str]:
     raw = backtest.get("codes") or []
     if isinstance(raw, str):
@@ -183,6 +193,12 @@ def parse_run(
         trade_rows = []
     fill_rows = [row for row in (fills or []) if isinstance(row, dict)]
     fees = _fees(metrics, [row for row in trade_rows if isinstance(row, dict)], fill_rows)
+    annualisation = card.get("annualisation") if isinstance(card.get("annualisation"), dict) else {}
+    config = payload.get("config") if isinstance(payload.get("config"), dict) else {}
+    cash = _cash_from_mapping(backtest)
+    if cash is None:
+        cash = _cash_from_mapping(config)
+    price_bars = payload.get("price_bars") if isinstance(payload.get("price_bars"), list) else []
     return {
         "run_id": payload.get("run_id"),
         "status": payload.get("status"),
@@ -206,6 +222,11 @@ def parse_run(
         "trades": _trades(payload),
         "code": strategy_source(code),
         "illustrative": False,
+        "initial_cash": cash,
+        "bars_per_year": _number(annualisation.get("bars_per_year")),
+        "config": config,
+        "backtest": backtest,
+        "price_bars": price_bars,
     }
 
 
@@ -216,6 +237,12 @@ def _with_report(
     benchmark_fills: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     result["report"] = build_report(result, fills, benchmark, benchmark_fills)
+    row = next((item for item in result["report"]["comparison"] if item["id"] == "return"), None)
+    if row is not None and row.get("benchmark") is not None:
+        if not result.get("benchmark_label"):
+            result["benchmark_label"] = "Buy and hold"
+        if result["metrics"].get("benchmark_return") is None:
+            result["metrics"]["benchmark_return"] = row["benchmark"]
     return result
 
 
@@ -310,13 +337,24 @@ def choose_strategy(root: Path) -> tuple[Path, Path | None]:
     return primary, benchmark
 
 
-def strategy_label(path: Path, code: str) -> str:
-    windows = [int(match) for match in _ROLLING_RE.findall(code)]
+_SMA_PAIR = re.compile(r"(\d+)\s*/\s*(\d+)\s*(?:SMA|moving[- ]average)", re.IGNORECASE)
+_RUN_ID = re.compile(r"^\d{8}_\d+")
+
+
+def strategy_label(path: Path, code: str, prompt: str = "", *, at_root: bool = False) -> str | None:
+    """Name the strategy from its code or, when the code does not say, from the prompt."""
+    windows = [int(match) for match in _ROLLING_RE.findall(code or "")]
     if len(windows) >= 2:
         fast, slow = sorted(windows[:2])
         return f"{fast}/{slow} SMA"
-    if path.name.lower() == "sma":
+    pair = _SMA_PAIR.search(prompt or "")
+    if pair:
+        fast, slow = sorted((int(pair.group(1)), int(pair.group(2))))
+        return f"{fast}/{slow} SMA"
+    if path.name.lower() == "sma" or re.search(r"\bsma\b", code or "", re.IGNORECASE):
         return "SMA"
+    if at_root or _RUN_ID.match(path.name):
+        return None
     return path.name
 
 
@@ -337,6 +375,46 @@ def _payload_from_dir(path: Path) -> dict[str, Any]:
     }
 
 
+def _read_json(path: Path) -> dict[str, Any]:
+    if not path.is_file():
+        return {}
+    try:
+        loaded = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return {}
+    return loaded if isinstance(loaded, dict) else {}
+
+
+def _apply_files(parsed: dict[str, Any], directory: Path) -> None:
+    """Pull starting capital, the fee schedule, and price bars off the run directory."""
+    config = _read_json(directory / "config.json") or _read_json(directory / "code" / "config.json")
+    if config:
+        merged = dict(parsed.get("config") or {})
+        merged.update(config)
+        parsed["config"] = merged
+        cash = _cash_from_mapping(config)
+        if cash is not None:
+            parsed["initial_cash"] = cash
+    if not parsed.get("price_bars"):
+        bars = _read_csv(directory / "artifacts" / "bars.csv")
+        if bars:
+            parsed["price_bars"] = bars
+
+
+def _merge_run_payload(disk: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
+    merged = dict(disk)
+    for key in ("metrics", "run_card", "artifacts_equity_csv", "artifacts_trades_csv"):
+        value = payload.get(key)
+        if value:
+            merged[key] = value
+    for key, value in payload.items():
+        if key in {"metrics", "run_card", "artifacts_equity_csv", "artifacts_trades_csv"}:
+            continue
+        if value not in (None, ""):
+            merged[key] = value
+    return merged
+
+
 def _overlay_benchmark(result: dict[str, Any], benchmark_equity: list[dict[str, Any]]) -> None:
     by_day: dict[str, float] = {}
     for point in benchmark_equity:
@@ -352,13 +430,25 @@ def _overlay_benchmark(result: dict[str, Any], benchmark_equity: list[dict[str, 
 
 def resolve_result(payload: dict[str, Any], code: dict[str, Any] | str | None = None) -> dict[str, Any]:
     """Use a nested strategy directory when the run root is the comparison."""
+    prompt = payload.get("prompt") if isinstance(payload.get("prompt"), str) else ""
     directory = payload.get("run_directory") or payload.get("run_dir")
     root = Path(directory) if isinstance(directory, str) and directory else None
     if root is None or not root.is_dir():
-        return _with_report(parse_run(payload, code))
+        parsed = parse_run(payload, code)
+        parsed["strategy_label"] = strategy_label(Path("run"), parsed["code"], prompt, at_root=True)
+        return _with_report(parsed)
     primary, benchmark = choose_strategy(root)
     if primary == root and benchmark is None:
-        return _with_report(parse_run(payload, code, fills=_read_fills(root)), _read_fills(root))
+        fills = _read_fills(root)
+        source = _read_code(root) or strategy_source(code)
+        parsed = parse_run(_merge_run_payload(_payload_from_dir(root), payload), source or code, fills=fills)
+        _apply_files(parsed, root)
+        if payload.get("run_id"):
+            parsed["run_id"] = payload["run_id"]
+        if payload.get("status"):
+            parsed["status"] = payload["status"]
+        parsed["strategy_label"] = strategy_label(root, parsed["code"], prompt, at_root=True)
+        return _with_report(parsed, fills)
     primary_code = _read_code(primary)
     if not primary_code and primary == root:
         primary_code_value: dict[str, Any] | str | None = code
@@ -366,21 +456,35 @@ def resolve_result(payload: dict[str, Any], code: dict[str, Any] | str | None = 
         primary_code_value = primary_code
     primary_fills = _read_fills(primary)
     parsed = parse_run(_payload_from_dir(primary), primary_code_value, fills=primary_fills)
+    if primary != root:
+        _apply_files(parsed, root)
+    _apply_files(parsed, primary)
     if payload.get("run_id"):
         parsed["run_id"] = payload["run_id"]
-    parsed["strategy_label"] = strategy_label(primary, parsed["code"])
+    parsed["strategy_label"] = strategy_label(primary, parsed["code"], prompt, at_root=primary == root)
     baseline = None
     benchmark_fills: list[dict[str, Any]] | None = None
     if benchmark is not None:
         benchmark_fills = _read_fills(benchmark)
         baseline = parse_run(_payload_from_dir(benchmark), _read_code(benchmark), fills=benchmark_fills)
+        _apply_files(baseline, benchmark)
         _overlay_benchmark(parsed, baseline["equity"])
         parsed["benchmark_label"] = "Buy and hold"
+        parsed["benchmark_source"] = "buy-and-hold run"
         parsed["metrics"]["benchmark_return"] = baseline["metrics"]["total_return"]
-    if not parsed["sources"] or not parsed["codes"]:
-        parent = parse_run(payload, code)
-        if not parsed["sources"]:
-            parsed["sources"] = parent["sources"]
-        if not parsed["codes"]:
-            parsed["codes"] = parent["codes"]
+    parent = parse_run(payload, code)
+    if not parsed["sources"]:
+        parsed["sources"] = parent["sources"]
+    if not parsed["codes"]:
+        parsed["codes"] = parent["codes"]
+    if parsed.get("initial_cash") is None and parent.get("initial_cash") is not None:
+        parsed["initial_cash"] = parent["initial_cash"]
+    if not parsed.get("config") and parent.get("config"):
+        parsed["config"] = parent["config"]
+    if parsed.get("start_date") is None and parent.get("start_date"):
+        parsed["start_date"] = parent["start_date"]
+        parsed["end_date"] = parsed.get("end_date") or parent.get("end_date")
+    if baseline is not None and baseline.get("initial_cash") is None and parsed.get("initial_cash") is not None:
+        baseline["initial_cash"] = parsed["initial_cash"]
+        baseline["bars_per_year"] = baseline.get("bars_per_year") or parsed.get("bars_per_year")
     return _with_report(parsed, primary_fills, baseline, benchmark_fills)

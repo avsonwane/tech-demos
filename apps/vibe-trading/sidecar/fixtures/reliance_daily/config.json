@@ -1,0 +1,10 @@
+{
+  "initial_cash": 1000000,
+  "slippage": 0.001,
+  "in_stt": 0.001,
+  "codes": [
+    "RELIANCE.NS"
+  ],
+  "start_date": "2023-08-01",
+  "end_date": "2024-12-31"
+}

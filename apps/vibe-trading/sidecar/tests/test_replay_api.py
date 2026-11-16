@@ -80,8 +80,42 @@ def test_replay_stream_includes_phases_and_the_sample_result(monkeypatch):
     assert "rolling(20)" in result["code"]
     assert "Buy and hold" not in result["code"]
     assert "17.64 percentage points" in result["report"]["summary"]
+    assert result["report"]["notes"]["benchmark_source"] == "buy-and-hold run"
     assert result["report"]["comparison"][2]["strategy"] == 0.8
     assert result["report"]["round_trips"][0]["pnl"] == 120
+
+
+def test_daily_sample_replay_uses_initial_cash_and_the_benchmark_column(monkeypatch):
+    monkeypatch.setenv("VIBE_DESK_REPLAY_DELAY", "0")
+    client = TestClient(app)
+    response = client.post(
+        "/api/run",
+        json={
+            "prompt": "Backtest a 20/50 SMA crossover on RELIANCE.NS",
+            "provider": "xai",
+            "mode": "replay",
+            "sample": "daily",
+        },
+    )
+    assert response.status_code == 200
+    result = None
+    for block in response.text.split("\n\n"):
+        event = "message"
+        data_line = ""
+        for line in block.splitlines():
+            if line.startswith("event:"):
+                event = line[6:].strip()
+            elif line.startswith("data:"):
+                data_line = line[5:].strip()
+        if event == "result" and data_line:
+            result = json.loads(data_line)
+    assert result is not None
+    assert result["strategy_label"] == "20/50 SMA"
+    assert result["report"]["notes"]["starting_capital"] == 1_000_000
+    assert result["report"]["notes"]["benchmark_source"] == "equity benchmark column"
+    assert result["report"]["notes"]["frequency"] == "daily"
+    report_return = next(row for row in result["report"]["comparison"] if row["id"] == "return")
+    assert abs(report_return["strategy"] - result["metrics"]["total_return"]) < 0.0001
 
 
 def test_auto_without_a_key_replays(monkeypatch):

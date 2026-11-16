@@ -88,7 +88,8 @@ def test_reliance_report_uses_only_the_fixture_files():
     assert report["drawdowns"] == [
         {"start": "2024-06-03", "trough": "2024-12-31", "recovery": None, "depth": -0.0959}
     ]
-    assert report["notes"]["warmup"] is None
+    assert report["notes"]["warmup"] == "2024-01-01 to 2024-01-02"
+    assert report["notes"]["frequency"] == "irregular"
     assert report["notes"]["fee_model"] is None
     assert report["notes"]["starting_capital"] == 100
     assert report["notes"]["fees"] == 7355
@@ -142,3 +143,94 @@ def test_adjacent_months_and_a_daily_curve_fill_sortino():
     assert _row(report, "avg_loss")["strategy"] == -1
     assert _row(report, "win_rate")["strategy"] == 0.5
     assert report["notes"]["sharpe_note"] is None
+    assert report["notes"]["frequency"] == "daily"
+    assert report["notes"]["warmup"] == "2024-01-01 to 2024-01-02"
+
+
+DAILY = Path(__file__).resolve().parents[1] / "fixtures" / "reliance_daily"
+
+
+def _shown(value: float) -> str:
+    number = value * 100
+    if number > 0:
+        return f"+{number:.2f}%"
+    return f"{number:.2f}%"
+
+
+def test_daily_flat_layout_matches_the_card_and_keeps_the_benchmark():
+    result = resolve_result(
+        {
+            "run_id": "reliance-daily",
+            "status": "success",
+            "run_directory": str(DAILY),
+        }
+    )
+    report = result["report"]
+    card_return = result["metrics"]["total_return"]
+    report_return = _row(report, "return")["strategy"]
+    report_benchmark = _row(report, "return")["benchmark"]
+    assert card_return == pytest.approx(0.116, abs=1e-4)
+    assert report_return == pytest.approx(card_return, abs=1e-4)
+    assert report_benchmark == pytest.approx(result["metrics"]["benchmark_return"], abs=1e-4)
+    assert report_benchmark == pytest.approx(-0.0587, abs=1e-4)
+    assert _row(report, "cagr")["strategy"] == pytest.approx(result["metrics"]["cagr"], abs=1e-4)
+    assert _row(report, "max_drawdown")["strategy"] == pytest.approx(result["metrics"]["max_drawdown"], abs=1e-4)
+    assert result["strategy_label"] == "20/50 SMA"
+    assert result["benchmark_label"] == "Buy and hold"
+    assert report["notes"]["benchmark_source"] == "equity benchmark column"
+    assert report["notes"]["starting_capital"] == 1_000_000
+    assert report["notes"]["frequency"] == "daily"
+    assert report["notes"]["warmup"] == "2023-08-01 to 2024-01-01"
+    assert report["notes"]["fee_model"] == "slippage 10 bps, STT 10 bps"
+    assert report["notes"]["sharpe_note"] is not None
+    assert "not a regular daily series" not in report["notes"]["sharpe_note"]
+    assert "Buy-and-hold was not recorded" not in report["summary"]
+    assert "flat from 2024-08-14 through 2024-12-31" in report["summary"]
+    assert "2024-05-03" not in report["summary"]
+    assert _shown(card_return) in report["summary"]
+    assert _shown(report_benchmark) in report["summary"]
+    assert len(result["equity"]) > 200
+    assert all(point["benchmark"] is not None for point in result["equity"])
+
+
+def test_prompt_names_a_root_strategy_when_the_code_does_not(tmp_path: Path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "equity.csv").write_text(
+        "timestamp,equity,drawdown\n2024-01-02,100,0\n2024-01-03,101,0\n",
+        encoding="utf-8",
+    )
+    (artifacts / "trades.csv").write_text("timestamp,code,side,price,qty,pnl,event\n", encoding="utf-8")
+    (tmp_path / "code").mkdir()
+    (tmp_path / "code" / "signal_engine.py").write_text("class SignalEngine:\n    pass\n", encoding="utf-8")
+    (tmp_path / "run_card.json").write_text("{}", encoding="utf-8")
+    result = resolve_result(
+        {
+            "run_directory": str(tmp_path),
+            "prompt": "Backtest a 20/50 SMA crossover on RELIANCE.NS",
+        }
+    )
+    assert result["strategy_label"] == "20/50 SMA"
+    assert result["benchmark_label"] is None
+
+
+def test_price_bars_supply_buy_and_hold_when_the_equity_file_has_no_benchmark(tmp_path: Path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "equity.csv").write_text(
+        "timestamp,equity,drawdown\n2024-01-02,1000,0\n2024-01-03,1100,0\n",
+        encoding="utf-8",
+    )
+    (artifacts / "trades.csv").write_text("timestamp,code,side,price,qty,pnl,event\n", encoding="utf-8")
+    (artifacts / "bars.csv").write_text(
+        "timestamp,close\n2024-01-02,100\n2024-01-03,90\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "run_card.json").write_text(
+        '{"backtest": {"initial_cash": 1000, "codes": ["TEST"]}}',
+        encoding="utf-8",
+    )
+    result = resolve_result({"run_directory": str(tmp_path)})
+    assert result["benchmark_label"] == "Buy and hold"
+    assert result["report"]["notes"]["benchmark_source"] == "price bars"
+    assert _row(result["report"], "return")["benchmark"] == pytest.approx(-0.1)

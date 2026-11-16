@@ -62,7 +62,7 @@ export function DeskApp() {
   const models = provider?.models ?? []
   const selectedModel = modelId || provider?.model || ""
 
-  async function start(mode: RunRequest["mode"]) {
+  async function start(mode: RunRequest["mode"], sample?: string) {
     abortRef.current?.abort()
     const controller = new AbortController()
     abortRef.current = controller
@@ -78,6 +78,7 @@ export function DeskApp() {
           provider: providerId,
           mode,
           model: models.length > 0 ? selectedModel : undefined,
+          sample,
         },
         (message) => {
           if (message.event === "meta") {
@@ -219,6 +220,9 @@ export function DeskApp() {
             </Button>
             <Button type="button" variant="outline" disabled={running || !health} onClick={() => void start("replay")}>
               Replay sample
+            </Button>
+            <Button type="button" variant="outline" disabled={running || !health} onClick={() => void start("replay", "daily")}>
+              Daily sample
             </Button>
             {provider && !provider.key_set ? (
               <p className="text-sm text-muted-foreground">{provider.env} is not set. Run plays the sample.</p>
