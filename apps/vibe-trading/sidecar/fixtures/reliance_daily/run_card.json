@@ -1,0 +1,26 @@
+{
+  "data_sources": [
+    "yfinance"
+  ],
+  "backtest": {
+    "codes": [
+      "RELIANCE.NS"
+    ],
+    "start_date": "2023-08-01",
+    "evaluation_start_date": "2024-01-01",
+    "end_date": "2024-12-31",
+    "source": "yfinance",
+    "initial_cash": 1000000,
+    "engine": "india_equity"
+  },
+  "annualisation": {
+    "bars_per_year": 252
+  },
+  "metrics": {
+    "total_return": 0.1160000000000001,
+    "annual_return": 0.11133489367463212,
+    "sharpe": 0.8,
+    "max_drawdown": -0.09589999999999999,
+    "win_rate": 0.3333333333333333
+  }
+}

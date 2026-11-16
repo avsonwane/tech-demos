@@ -1,0 +1,31 @@
+{
+  "label": "Replay of a saved RELIANCE.NS layout. Not produced by a live Vibe-Trading session. The headline is the 20/50 SMA under sma/. Buy-and-hold stays the benchmark. This replay does not call a model or refetch bars.",
+  "source": "illustrative-sample",
+  "prompt": "Backtest a 20/50 SMA crossover on RELIANCE.NS for 2024 vs buy-and-hold, report max drawdown",
+  "phases": [
+    {
+      "id": "plan",
+      "title": "Plan",
+      "status": "done",
+      "body": "Read the request as a 20/50 simple-moving-average crossover on RELIANCE.NS for calendar 2024, compared with buy-and-hold. This text is the saved layout, not a new model trace."
+    },
+    {
+      "id": "ground",
+      "title": "Ground",
+      "status": "done",
+      "body": "Bars loaded by the backtest engine (source=yfinance). No separate data-fetch event was left waiting."
+    },
+    {
+      "id": "code",
+      "title": "Code",
+      "status": "done",
+      "body": "The requested strategy is sma/code/signal_engine.py. The run root holds the buy-and-hold comparison."
+    },
+    {
+      "id": "execution",
+      "title": "Execution",
+      "status": "done",
+      "body": "The SMA artifacts are the headline. Buy-and-hold is the benchmark line. Fees are the sum of the SMA fills."
+    }
+  ]
+}

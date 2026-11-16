@@ -1,0 +1,31 @@
+{
+  "label": "Replay of a saved daily RELIANCE.NS layout. The strategy engine sits at the run root, and buy-and-hold is the benchmark column on the equity file. Not produced by a live Vibe-Trading session. This replay does not call a model or refetch bars.",
+  "source": "illustrative-sample",
+  "prompt": "Backtest a 20/50 SMA crossover on RELIANCE.NS for 2024 vs buy-and-hold, report max drawdown",
+  "phases": [
+    {
+      "id": "plan",
+      "title": "Plan",
+      "status": "done",
+      "body": "Read the request as a 20/50 simple-moving-average crossover on RELIANCE.NS, compared with buy-and-hold. This text is the saved layout, not a new model trace."
+    },
+    {
+      "id": "ground",
+      "title": "Ground",
+      "status": "done",
+      "body": "Bars loaded by the backtest engine (source=yfinance). The equity file is a daily series."
+    },
+    {
+      "id": "code",
+      "title": "Code",
+      "status": "done",
+      "body": "The strategy is code/signal_engine.py at the run root. There is no sma/ or bh/ directory. The benchmark is the equity file's benchmark column."
+    },
+    {
+      "id": "execution",
+      "title": "Execution",
+      "status": "done",
+      "body": "Returns use the run's initial cash of 1,000,000. The report, the run card, and the chart share that base."
+    }
+  ]
+}

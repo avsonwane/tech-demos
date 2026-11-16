@@ -1,0 +1,31 @@
+{
+  "label": "Replay of a saved RELIANCE.NS layout whose signal is always long. The prompt asked for a 20/50 SMA crossover. Not produced by a live Vibe-Trading session. This replay does not call a model or refetch bars.",
+  "source": "illustrative-sample",
+  "prompt": "Backtest a 20/50 SMA crossover on RELIANCE.NS for 2024 vs buy-and-hold, report max drawdown",
+  "phases": [
+    {
+      "id": "plan",
+      "title": "Plan",
+      "status": "done",
+      "body": "The request was a 20/50 simple-moving-average crossover on RELIANCE.NS. This text is the saved layout, not a new model trace."
+    },
+    {
+      "id": "ground",
+      "title": "Ground",
+      "status": "done",
+      "body": "Bars are artifacts/ohlcv_RELIANCE.NS.csv."
+    },
+    {
+      "id": "code",
+      "title": "Code",
+      "status": "done",
+      "body": "signal_engine.py returns pd.Series(1.0). There is no sma/ directory."
+    },
+    {
+      "id": "execution",
+      "title": "Execution",
+      "status": "done",
+      "body": "The run finished. The card warns that the signal is constant."
+    }
+  ]
+}
