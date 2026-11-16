@@ -109,12 +109,14 @@ export type ReportNotes = {
   fees: number | null
   sharpe_note: string | null
   benchmark_source: string | null
+  benchmark_detail: string | null
+  recorded_benchmark: string | null
 }
 
 export type DeskReport = {
   summary: string
   comparison: ReportRow[]
-  monthly: { year: number; months: Array<number | null> }[]
+  monthly: { year: number; months: Array<number | null>; marks?: Array<string | null> }[]
   round_trips: RoundTrip[]
   drawdowns: DrawdownPeriod[]
   notes: ReportNotes

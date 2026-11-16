@@ -1,6 +1,7 @@
 import json
 import os
 
+import pytest
 from fastapi.testclient import TestClient
 
 os.environ["VIBE_DESK_AUTOSTART"] = "0"
@@ -65,22 +66,22 @@ def test_replay_stream_includes_phases_and_the_sample_result(monkeypatch):
     assert result is not None
     assert result["illustrative"] is True
     assert result["strategy_label"] == "20/50 SMA"
-    assert result["benchmark_label"] == "Buy and hold"
+    assert result["benchmark_label"] == "Buy & hold"
     assert result["codes"] == ["RELIANCE.NS"]
-    assert result["sources"] == ["yfinance"]
+    assert result["sources"] == ["Yahoo Finance (yfinance)"]
     assert result["metrics"]["total_return"] == 0.116
     assert result["metrics"]["sharpe"] == 0.8
     assert result["metrics"]["max_drawdown"] == -0.0959
     assert result["metrics"]["fees"] == 7355
-    assert result["metrics"]["benchmark_return"] == -0.0604
-    assert result["equity"][0]["benchmark"] == 100
+    assert result["metrics"]["benchmark_return"] == pytest.approx(-0.0713544263228375)
+    assert result["equity"][0]["benchmark"] == pytest.approx(100.08887628832035)
     assert result["equity"][-1]["equity"] == 111.6
-    assert result["equity"][-1]["benchmark"] == 93.96
+    assert result["equity"][-1]["benchmark"] == pytest.approx(92.86455736771624)
     assert len(result["trades"]) == 3
     assert "rolling(20)" in result["code"]
     assert "Buy and hold" not in result["code"]
-    assert "17.64 percentage points" in result["report"]["summary"]
-    assert result["report"]["notes"]["benchmark_source"] == "buy-and-hold run"
+    assert "18.74 percentage points" in result["report"]["summary"]
+    assert result["report"]["notes"]["benchmark_source"] == "Buy & hold, fees included: one entry + one exit"
     assert result["report"]["comparison"][2]["strategy"] == 0.8
     assert result["report"]["round_trips"][0]["pnl"] == 120
 
@@ -112,7 +113,7 @@ def test_daily_sample_replay_uses_initial_cash_and_the_benchmark_column(monkeypa
     assert result is not None
     assert result["strategy_label"] == "20/50 SMA"
     assert result["report"]["notes"]["starting_capital"] == 1_000_000
-    assert result["report"]["notes"]["benchmark_source"] == "equity benchmark column"
+    assert result["report"]["notes"]["benchmark_source"] == "Buy & hold, fees included: one entry + one exit"
     assert result["report"]["notes"]["frequency"] == "daily"
     report_return = next(row for row in result["report"]["comparison"] if row["id"] == "return")
     assert abs(report_return["strategy"] - result["metrics"]["total_return"]) < 0.0001

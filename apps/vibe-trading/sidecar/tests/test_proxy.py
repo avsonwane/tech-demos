@@ -93,7 +93,7 @@ def test_drive_live_posts_the_session_and_parses_the_run():
     result = events[-1]
     assert result[0] == "result"
     assert result[1]["codes"] == ["AAPL"]
-    assert result[1]["sources"] == ["yahoo"]
+    assert result[1]["sources"] == ["Yahoo Finance (yfinance)"]
     assert result[1]["metrics"]["sharpe"] == 1.1
     assert result[1]["equity"][0]["benchmark"] == 100
     assert "SignalEngine" in result[1]["code"]

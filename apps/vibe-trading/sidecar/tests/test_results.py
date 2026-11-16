@@ -58,7 +58,7 @@ def test_parse_run_prefers_full_equity_rows_and_the_run_card():
     result = parse_run(_payload(), {"signal_engine.py": "class SignalEngine:\n    pass\n"})
     assert result["illustrative"] is False
     assert result["codes"] == ["AAPL"]
-    assert result["sources"] == ["yahoo"]
+    assert result["sources"] == ["Yahoo Finance (yfinance)"]
     assert result["start_date"] == "2024-01-02"
     assert result["end_date"] == "2024-12-31"
     assert result["equity"][0]["benchmark"] == 100

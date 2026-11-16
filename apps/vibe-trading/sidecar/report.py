@@ -200,28 +200,66 @@ def _month_end(points: list[dict[str, Any]]) -> dict[tuple[int, int], float]:
     return ends
 
 
-def monthly_returns(points: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """One row per year. A month is filled only when it and the previous month both have a bar."""
-    ends = _month_end(_sorted_equity(points))
+def _next_month(year: int, month: int) -> date:
+    if month == 12:
+        return date(year + 1, 1, 1)
+    return date(year, month + 1, 1)
+
+
+def monthly_returns(
+    points: list[dict[str, Any]],
+    capital: float | None = None,
+    start: date | None = None,
+    daily: bool = False,
+) -> list[dict[str, Any]]:
+    """One row per year.
+
+    A month with a bar and a previous month is the change between those
+    month-end equities. On a daily series, the first month is measured from
+    starting capital, and a month that ends before the first equity bar is
+    warmup at 0.00%.
+    """
+    ordered = _sorted_equity(points)
+    ends = _month_end(ordered)
     if not ends:
         return []
+    first = _day(ordered[0].get("time"))
     rows = []
     for year in sorted({key[0] for key in ends}):
         months: list[float | None] = []
+        marks: list[str | None] = []
         for month in range(1, 13):
+            month_ends = _next_month(year, month)
+            before_first = daily and first is not None and month_ends <= first
+            if before_first:
+                if start is not None and month_ends <= start:
+                    months.append(None)
+                    marks.append(None)
+                    continue
+                months.append(0.0)
+                marks.append("warmup")
+                continue
             if (year, month) not in ends:
                 months.append(None)
+                marks.append(None)
                 continue
             previous_year, previous_month = (year, month - 1) if month > 1 else (year - 1, 12)
             if (previous_year, previous_month) not in ends:
-                months.append(None)
+                if daily and capital is not None and capital > 0:
+                    months.append(ends[(year, month)] / capital - 1)
+                    marks.append("capital")
+                else:
+                    months.append(None)
+                    marks.append(None)
                 continue
             base = ends[(previous_year, previous_month)]
             if base == 0:
                 months.append(None)
+                marks.append(None)
                 continue
             months.append(ends[(year, month)] / base - 1)
-        rows.append({"year": year, "months": months})
+            marks.append(None)
+        rows.append({"year": year, "months": months, "marks": marks})
     return rows
 
 
@@ -460,6 +498,12 @@ def _side(result: dict[str, Any], fills: list[dict[str, Any]]) -> dict[str, Any]
     if isinstance(metrics.get("sharpe"), (int, float)) and math.isfinite(metrics["sharpe"]):
         sharpe = float(metrics["sharpe"])
         sharpe_from_metrics = True
+    elif daily and periods and returns:
+        spread = _sample_std(returns)
+        if spread:
+            sharpe = (sum(returns) / len(returns)) / spread * math.sqrt(periods)
+            if not math.isfinite(sharpe):
+                sharpe = None
     drawdown = _path_drawdown(points, base) if daily else None
     if drawdown is None:
         drawdown = _min_drawdown(points)
@@ -506,7 +550,7 @@ def _side(result: dict[str, Any], fills: list[dict[str, Any]]) -> dict[str, Any]
         "fees_pct": fees_pct,
         "trips": trips,
         "drawdowns": drawdown_periods(points),
-        "monthly": monthly_returns(points),
+        "monthly": monthly_returns(points, base, _day(result.get("start_date")), daily),
         "starting_capital": base,
         "first_bar": first.isoformat() if first else None,
         "last_bar": last.isoformat() if last else None,
@@ -719,6 +763,8 @@ def _notes(result: dict[str, Any], strategy: dict[str, Any], fills: list[dict[st
         "fees": strategy["fees"],
         "sharpe_note": sharpe_note,
         "benchmark_source": result.get("benchmark_source"),
+        "benchmark_detail": result.get("benchmark_detail"),
+        "recorded_benchmark": result.get("recorded_benchmark"),
     }
 
 
@@ -780,7 +826,10 @@ def _markdown(result: dict[str, Any], report: dict[str, Any]) -> str:
             cells = [_pct(value) for value in year["months"]]
             lines.append(f"| {year['year']} | " + " | ".join(cells) + " |")
         lines.append("")
-        lines.append("A month is filled only when that month and the previous month both have an equity bar.")
+        lines.append(
+            "On a daily series, a month before the first equity bar is warmup and shows 0.00%. "
+            "The first month with bars is measured from starting capital when the previous month has none."
+        )
     lines.extend(["", "## Trades", "", "| Entry | Exit | Entry price | Exit price | Qty | Days | PnL | Return | Fees | Status |", "| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |"])
     if not report["round_trips"]:
         lines.append("| — | — | — | — | — | — | — | — | — | — |")
@@ -819,7 +868,8 @@ def _markdown(result: dict[str, Any], report: dict[str, Any]) -> str:
             f"- Warmup: {_MISSING if notes['warmup'] is None else notes['warmup']}",
             f"- Starting capital: {_money(notes['starting_capital'], False)}",
             f"- Fee model: {_MISSING if notes['fee_model'] is None else notes['fee_model']}",
-            f"- Benchmark source: {notes['benchmark_source'] or _MISSING}",
+            f"- Benchmark: {notes.get('benchmark_detail') or notes['benchmark_source'] or _MISSING}",
+            f"- Recorded benchmark: {notes.get('recorded_benchmark') or _MISSING}",
             f"- Fees: {_money(notes['fees'], False)}",
             "- Fees / PnL divides fill fees by closed-trade PnL. Those columns are not rescaled.",
             "- A month is colored only when that month and the previous month both have an equity bar.",
@@ -864,6 +914,205 @@ def _csv(trips: list[dict[str, Any]]) -> str:
     return buffer.getvalue()
 
 
+_BH_LABEL = "Buy & hold, fees included: one entry + one exit"
+
+# India delivery defaults from vibe-trading-ai 0.1.19 IndiaEquityEngine.
+# A run's config overrides a key when that key is present. Two RELIANCE runs
+# then share one schedule even when one of them left the keys out of config.json.
+_INDIA_FEES = {
+    "slippage": 0.001,
+    "in_brokerage": 0.0,
+    "in_stt": 0.001,
+    "in_exchange_txn": 0.0000297,
+    "in_sebi_fee": 0.000001,
+    "in_stamp_duty": 0.00015,
+    "in_gst": 0.18,
+    "in_dp_charge": 0.0,
+}
+
+
+def _configured(config: Any, key: str, default: float) -> float:
+    if isinstance(config, dict) and key in config:
+        value = config.get(key)
+        if isinstance(value, (int, float)) and math.isfinite(value):
+            return float(value)
+    return default
+
+
+def _india_market(result: dict[str, Any]) -> bool:
+    backtest = result.get("backtest") if isinstance(result.get("backtest"), dict) else {}
+    engine = str(backtest.get("engine") or "").lower()
+    if engine in {"india_equity", "india"}:
+        return True
+    codes = result.get("codes") or []
+    return any(str(code).upper().endswith((".NS", ".BO")) for code in codes)
+
+
+def _india_schedule(config: Any) -> dict[str, float]:
+    return {key: _configured(config, key, default) for key, default in _INDIA_FEES.items()}
+
+
+def _variable_rate(schedule: dict[str, float], buy: bool) -> tuple[float, float]:
+    """Return (rate on notional, flat cash fee) for one India side."""
+    brokerage = schedule["in_brokerage"]
+    exchange = schedule["in_exchange_txn"]
+    sebi = schedule["in_sebi_fee"]
+    gst = (brokerage + exchange + sebi) * schedule["in_gst"]
+    variable = brokerage + exchange + sebi + gst + schedule["in_stt"]
+    if buy:
+        return variable + schedule["in_stamp_duty"], 0.0
+    return variable, schedule["in_dp_charge"]
+
+
+def _generic_costs(config: Any) -> tuple[float, float]:
+    slippage = _configured(config, "slippage", 0.0)
+    if not (isinstance(config, dict) and "slippage" in config) and isinstance(config, dict) and "slippage_bps" in config:
+        slippage = _configured(config, "slippage_bps", 0.0) / 10_000
+    fee = 0.0
+    if isinstance(config, dict):
+        for key in ("commission_rate", "commission", "fee_rate", "taker_rate"):
+            if key in config:
+                fee = _configured(config, key, 0.0)
+                break
+    return slippage, fee
+
+
+def _close_series(rows: list[dict[str, Any]]) -> list[tuple[date, float]]:
+    series: list[tuple[date, float]] = []
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        day = _day(row.get("time") or row.get("timestamp") or row.get("date"))
+        value = row.get("close")
+        if value is None:
+            value = row.get("price")
+        if isinstance(value, str):
+            try:
+                value = float(value)
+            except ValueError:
+                value = None
+        if day is None or not isinstance(value, (int, float)) or not math.isfinite(value) or value <= 0:
+            continue
+        series.append((day, float(value)))
+    series.sort(key=lambda item: item[0])
+    return series
+
+
+def _schedule_phrase(schedule: dict[str, float]) -> str:
+    parts = [
+        f"slippage {schedule['slippage'] * 10000:.4g} bps",
+        f"STT {schedule['in_stt'] * 10000:.4g} bps",
+        f"exchange {schedule['in_exchange_txn'] * 10000:.4g} bps",
+        f"SEBI {schedule['in_sebi_fee'] * 10000:.4g} bps",
+        f"stamp duty {schedule['in_stamp_duty'] * 10000:.4g} bps",
+        f"GST {schedule['in_gst'] * 100:.4g}% on brokerage, exchange, and SEBI",
+    ]
+    if schedule["in_brokerage"]:
+        parts.insert(1, f"brokerage {schedule['in_brokerage'] * 10000:.4g} bps")
+    if schedule["in_dp_charge"]:
+        parts.append(f"DP charge {schedule['in_dp_charge']:.4g}")
+    return ", ".join(parts)
+
+
+def compute_buy_hold(result: dict[str, Any]) -> dict[str, Any] | None:
+    """One buy-and-hold from the run's closes, initial capital, and fee schedule.
+
+    Entry is the first close on or after the requested start, which is the
+    first tradable bar after warmup when the price file begins at the
+    evaluation window. Exit is the last close on or before the requested end.
+    Slippage and fees are charged once on the way in and once on the way out.
+    """
+    closes = _close_series(result.get("price_bars") or [])
+    if len(closes) < 2:
+        return None
+    start = _day(result.get("start_date"))
+    end = _day(result.get("end_date"))
+    window = [
+        item
+        for item in closes
+        if (start is None or item[0] >= start) and (end is None or item[0] <= end)
+    ]
+    if len(window) < 2:
+        window = closes
+    capital = _positive(result.get("initial_cash"))
+    if capital is None:
+        equity = _sorted_equity(result.get("equity") or [])
+        capital = _capital_base(equity, result)
+    if capital is None:
+        return None
+    config = result.get("config") if isinstance(result.get("config"), dict) else {}
+    schedule = None
+    if _india_market(result):
+        schedule = _india_schedule(config)
+        slippage = schedule["slippage"]
+        buy_rate, buy_flat = _variable_rate(schedule, True)
+        sell_rate, sell_flat = _variable_rate(schedule, False)
+        costs = _schedule_phrase(schedule)
+    else:
+        slippage, fee = _generic_costs(config)
+        buy_rate = sell_rate = fee
+        buy_flat = sell_flat = 0.0
+        costs = f"slippage {slippage * 10000:.4g} bps, fee {fee * 10000:.4g} bps"
+    entry_day, entry_close = window[0]
+    exit_day, exit_close = window[-1]
+    entry_px = entry_close * (1 + slippage)
+    exit_px = exit_close * (1 - slippage)
+    unit = entry_px * (1 + buy_rate)
+    if unit <= 0 or capital <= buy_flat:
+        return None
+    shares = (capital - buy_flat) / unit
+    if shares <= 0:
+        return None
+    entry_fee = shares * entry_px * buy_rate + buy_flat
+    cash = capital - shares * entry_px - entry_fee
+    exit_fee = shares * exit_px * sell_rate + sell_flat
+    points: list[dict[str, Any]] = []
+    for day, close in window:
+        if day == exit_day:
+            equity = cash + shares * exit_px - exit_fee
+        else:
+            equity = cash + shares * close
+        points.append({"time": day.isoformat(), "equity": equity, "drawdown": None})
+    pnl = (shares * exit_px - exit_fee) - (shares * entry_px + entry_fee)
+    note = (
+        f"{_BH_LABEL}. Held from {entry_day.isoformat()} through {exit_day.isoformat()}, "
+        "the first price bar on or after the requested start through the last bar. "
+        "Time in market is 100% of that window. "
+        f"Costs: {costs}."
+    )
+    return {
+        "equity": points,
+        "trades": [
+            {
+                "time": entry_day.isoformat(),
+                "code": "",
+                "side": "buy",
+                "price": entry_px,
+                "qty": shares,
+                "pnl": 0.0,
+                "event": "entry",
+            },
+            {
+                "time": exit_day.isoformat(),
+                "code": "",
+                "side": "sell",
+                "price": exit_px,
+                "qty": shares,
+                "pnl": pnl,
+                "event": "exit",
+            },
+        ],
+        "fills": [
+            {"timestamp": entry_day.isoformat(), "action": "open", "fee": entry_fee},
+            {"timestamp": exit_day.isoformat(), "action": "close", "fee": exit_fee},
+        ],
+        "metrics": {},
+        "initial_cash": capital,
+        "bars_per_year": result.get("bars_per_year"),
+        "note": note,
+    }
+
+
 def _benchmark_points(rows: list[dict[str, Any]], value_key: str) -> list[dict[str, Any]]:
     points: list[dict[str, Any]] = []
     for row in rows:
@@ -884,45 +1133,36 @@ def _benchmark_points(rows: list[dict[str, Any]], value_key: str) -> list[dict[s
     return _sorted_equity(points)
 
 
-def _scaled_bars(rows: list[dict[str, Any]], base: float | None) -> list[dict[str, Any]]:
-    """Buy-and-hold equity from close prices, seeded at the starting capital."""
-    closes = _benchmark_points(rows, "close")
-    if len(closes) < 2:
-        return []
-    first = float(closes[0]["equity"])
-    if first <= 0:
-        return []
-    seed = base if base and base > 0 else first
-    return [
-        {"time": point["time"], "equity": seed * float(point["equity"]) / first, "drawdown": None}
-        for point in closes
-    ]
-
-
-def _fallback_benchmark(result: dict[str, Any]) -> tuple[dict[str, Any] | None, str | None]:
-    """Use the equity benchmark column, then a buy-and-hold computed from price bars."""
-    column = _benchmark_points(result.get("equity") or [], "benchmark")
-    source = None
-    points: list[dict[str, Any]] = []
+def _recorded_benchmark(
+    benchmark: dict[str, Any] | None,
+    column: list[dict[str, Any]],
+) -> str | None:
+    """A Vibe-Trading benchmark stays a note. The table uses the computed one."""
+    if benchmark is not None:
+        side = _side(benchmark, [])
+        if side["total_return"] is not None:
+            return (
+                f"Vibe-Trading also recorded a buy-and-hold run at {_pct(side['total_return'])}. "
+                "The comparison table uses the computed buy-and-hold."
+            )
     if len(column) >= 2:
-        points = column
-        source = "equity benchmark column"
-    else:
-        points = _scaled_bars(result.get("price_bars") or [], _positive(result.get("initial_cash")))
-        if len(points) >= 2:
-            source = "price bars"
-    if source is None:
-        return None, None
-    return (
-        {
-            "equity": points,
-            "trades": [],
-            "metrics": {},
-            "initial_cash": result.get("initial_cash"),
-            "bars_per_year": result.get("bars_per_year"),
-        },
-        source,
-    )
+        end = float(column[-1]["equity"])
+        start = float(column[0]["equity"])
+        if start:
+            recorded = end / start - 1
+            return (
+                f"The equity file's benchmark column changes by {_pct(recorded)} and is price-only. "
+                "The comparison table uses the computed buy-and-hold."
+            )
+    return None
+
+
+def _overlay_curve(result: dict[str, Any], points: list[dict[str, Any]]) -> None:
+    by_day = {str(point.get("time"))[:10]: float(point["equity"]) for point in points}
+    for point in result.get("equity") or []:
+        match = by_day.get(str(point.get("time"))[:10])
+        if match is not None:
+            point["benchmark"] = match
 
 
 def build_report(
@@ -935,17 +1175,36 @@ def build_report(
     strategy_fills = [row for row in (fills or []) if isinstance(row, dict)]
     strategy = _side(result, strategy_fills)
     other = None
-    source = result.get("benchmark_source") if isinstance(result.get("benchmark_source"), str) else None
-    if benchmark is not None:
+    source = None
+    recorded = None
+    computed = compute_buy_hold(result)
+    column = _benchmark_points(result.get("equity") or [], "benchmark")
+    detail = None
+    if computed is not None:
+        other = _side(computed, computed["fills"])
+        source = _BH_LABEL
+        detail = computed["note"]
+        _overlay_curve(result, computed["equity"])
+        recorded = _recorded_benchmark(benchmark, column)
+    elif benchmark is not None:
         other = _side(benchmark, [row for row in (benchmark_fills or []) if isinstance(row, dict)])
-        source = source or "buy-and-hold run"
-    else:
-        fallback, fallback_source = _fallback_benchmark(result)
-        if fallback is not None:
-            other = _side(fallback, [])
-            source = fallback_source
+        source = "Vibe-Trading buy-and-hold run. Price bars were not available, so this column is that run."
+    elif len(column) >= 2:
+        other = _side(
+            {
+                "equity": column,
+                "trades": [],
+                "metrics": {},
+                "initial_cash": result.get("initial_cash"),
+                "bars_per_year": result.get("bars_per_year"),
+            },
+            [],
+        )
+        source = "Equity benchmark column. Price bars were not available, so this column is price-only."
     noted = dict(result)
     noted["benchmark_source"] = source
+    noted["benchmark_detail"] = detail
+    noted["recorded_benchmark"] = recorded
     report = {
         "summary": _summary(result, strategy, other),
         "comparison": _comparison(strategy, other),

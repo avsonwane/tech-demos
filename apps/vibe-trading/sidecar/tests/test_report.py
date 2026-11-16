@@ -1,3 +1,4 @@
+import json
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -40,21 +41,22 @@ def _reliance():
 
 def test_reliance_report_uses_only_the_fixture_files():
     report = _reliance()["report"]
-    assert "17.64 percentage points" in report["summary"]
+    assert "18.74 percentage points" in report["summary"]
     assert "flat from 2024-07-01 until the next entry on 2024-09-01" in report["summary"]
     assert "still open" in report["summary"]
     assert "Aug 14" not in report["summary"]
 
     assert _row(report, "return")["strategy"] == pytest.approx(0.116)
-    assert _row(report, "return")["benchmark"] == pytest.approx(-0.0604)
+    assert _row(report, "return")["benchmark"] == pytest.approx(-0.0713544263228375)
     assert _row(report, "sharpe")["strategy"] == 0.8
-    assert _row(report, "sharpe")["benchmark"] == -0.16
+    assert _row(report, "sharpe")["benchmark"] == pytest.approx(-2.527448435519075)
     assert _row(report, "sortino")["strategy"] is None
     assert _row(report, "volatility")["strategy"] is None
     assert _row(report, "max_drawdown")["strategy"] == -0.0959
-    assert _row(report, "max_drawdown")["benchmark"] == -0.0604
+    assert _row(report, "max_drawdown")["benchmark"] == pytest.approx(-0.0796555718763402)
     assert _row(report, "win_rate")["strategy"] == 1
-    assert _row(report, "win_rate")["benchmark"] is None
+    assert _row(report, "win_rate")["benchmark"] == 0
+    assert _row(report, "trades")["benchmark"] == 1
     assert _row(report, "profit_factor")["strategy"] is None
     assert _row(report, "avg_win")["strategy"] == 120
     assert _row(report, "avg_loss")["strategy"] is None
@@ -93,10 +95,12 @@ def test_reliance_report_uses_only_the_fixture_files():
     assert report["notes"]["fee_model"] is None
     assert report["notes"]["starting_capital"] == 100
     assert report["notes"]["fees"] == 7355
-    assert report["notes"]["sources"] == ["yfinance"]
+    assert report["notes"]["sources"] == ["Yahoo Finance (yfinance)"]
     assert "not recomputed" in report["notes"]["sharpe_note"]
     assert "—" in report["markdown"]
-    assert "17.64 percentage points" in report["markdown"]
+    assert "18.74 percentage points" in report["markdown"]
+    assert report["notes"]["benchmark_source"] == "Buy & hold, fees included: one entry + one exit"
+    assert "recorded a buy-and-hold run at -6.04%" in report["notes"]["recorded_benchmark"]
     assert "2024-03-01,2024-07-01,100,112,10,122,120,0.12,4500,closed" in report["trades_csv"]
 
 
@@ -172,12 +176,17 @@ def test_daily_flat_layout_matches_the_card_and_keeps_the_benchmark():
     assert card_return == pytest.approx(0.116, abs=1e-4)
     assert report_return == pytest.approx(card_return, abs=1e-4)
     assert report_benchmark == pytest.approx(result["metrics"]["benchmark_return"], abs=1e-4)
-    assert report_benchmark == pytest.approx(-0.0587, abs=1e-4)
+    assert report_benchmark == pytest.approx(-0.0713544263228375)
     assert _row(report, "cagr")["strategy"] == pytest.approx(result["metrics"]["cagr"], abs=1e-4)
     assert _row(report, "max_drawdown")["strategy"] == pytest.approx(result["metrics"]["max_drawdown"], abs=1e-4)
     assert result["strategy_label"] == "20/50 SMA"
-    assert result["benchmark_label"] == "Buy and hold"
-    assert report["notes"]["benchmark_source"] == "equity benchmark column"
+    assert result["benchmark_label"] == "Buy & hold"
+    assert report["notes"]["benchmark_source"] == "Buy & hold, fees included: one entry + one exit"
+    assert report["monthly"][0]["marks"][0] == "capital"
+    assert report["monthly"][0]["months"][0] is not None
+    assert _row(report, "trades")["benchmark"] == 1
+    assert _row(report, "exposure")["benchmark"] == pytest.approx(1)
+    assert _row(report, "win_rate")["benchmark"] == 0
     assert report["notes"]["starting_capital"] == 1_000_000
     assert report["notes"]["frequency"] == "daily"
     assert report["notes"]["warmup"] == "2023-08-01 to 2024-01-01"
@@ -214,6 +223,89 @@ def test_prompt_names_a_root_strategy_when_the_code_does_not(tmp_path: Path):
     assert result["benchmark_label"] is None
 
 
+def test_a_benchmark_folder_does_not_change_the_computed_buy_and_hold(tmp_path: Path):
+    """The same closes, capital, and costs produce one figure with or without a bh/ run."""
+    bars = (DAILY / "artifacts" / "bars.csv").read_text(encoding="utf-8")
+    for name in ("flat", "nested"):
+        root = tmp_path / name
+        artifacts = root / "artifacts"
+        artifacts.mkdir(parents=True)
+        (artifacts / "bars.csv").write_text(bars, encoding="utf-8")
+        (artifacts / "equity.csv").write_text(
+            "timestamp,equity,drawdown\n2024-01-02,1000000,0\n2024-12-31,1100000,0\n",
+            encoding="utf-8",
+        )
+        (artifacts / "trades.csv").write_text("timestamp,code,side,price,qty,pnl,event\n", encoding="utf-8")
+        (root / "run_card.json").write_text(
+            json.dumps(
+                {
+                    "data_sources": ["yahoo"],
+                    "backtest": {
+                        "codes": ["RELIANCE.NS"],
+                        "start_date": "2024-01-01",
+                        "end_date": "2024-12-31",
+                        "initial_cash": 1_000_000,
+                    },
+                }
+            ),
+            encoding="utf-8",
+        )
+    nested = tmp_path / "nested"
+    bh = nested / "bh" / "artifacts"
+    bh.mkdir(parents=True)
+    (bh / "equity.csv").write_text(
+        "timestamp,equity,drawdown\n2024-01-02,100,0\n2024-12-31,50,-0.5\n",
+        encoding="utf-8",
+    )
+    (bh / "trades.csv").write_text("timestamp,code,side,price,qty,pnl,event\n", encoding="utf-8")
+    (bh / "metrics.csv").write_text(
+        "total_return,annual_return,sharpe,max_drawdown,win_rate\n-0.5,-0.5,0,-0.5,0\n",
+        encoding="utf-8",
+    )
+    (nested / "bh" / "code").mkdir()
+    (nested / "bh" / "code" / "signal_engine.py").write_text("signal = 1\n# buy and hold\n", encoding="utf-8")
+    flat = resolve_result({"run_directory": str(tmp_path / "flat")})
+    with_folder = resolve_result({"run_directory": str(nested)})
+    flat_return = _row(flat["report"], "return")["benchmark"]
+    folder_return = _row(with_folder["report"], "return")["benchmark"]
+    assert flat_return == pytest.approx(folder_return)
+    assert flat_return == pytest.approx(-0.0713544263228375)
+    assert "recorded a buy-and-hold run" in with_folder["report"]["notes"]["recorded_benchmark"]
+    assert with_folder["report"]["notes"]["sources"] == ["Yahoo Finance (yfinance)"]
+    assert flat["report"]["notes"]["sources"] == ["Yahoo Finance (yfinance)"]
+
+
+def test_months_before_the_first_equity_bar_are_warmup():
+    equity = []
+    day = date(2024, 3, 1)
+    level = 100.0
+    while day <= date(2024, 4, 30):
+        if day.weekday() < 5:
+            equity.append({"time": day.isoformat(), "equity": level, "drawdown": 0})
+            level *= 1.001
+        day += timedelta(days=1)
+    report = build_report(
+        {
+            "strategy_label": "Probe",
+            "start_date": "2024-01-01",
+            "end_date": "2024-04-30",
+            "sources": [],
+            "metrics": {},
+            "equity": equity,
+            "trades": [],
+            "initial_cash": 100,
+        },
+        [],
+    )
+    year = report["monthly"][0]
+    assert year["months"][0] == 0
+    assert year["marks"][0] == "warmup"
+    assert year["months"][1] == 0
+    assert year["marks"][1] == "warmup"
+    assert year["marks"][2] == "capital"
+    assert year["months"][2] is not None
+
+
 def test_price_bars_supply_buy_and_hold_when_the_equity_file_has_no_benchmark(tmp_path: Path):
     artifacts = tmp_path / "artifacts"
     artifacts.mkdir()
@@ -231,6 +323,8 @@ def test_price_bars_supply_buy_and_hold_when_the_equity_file_has_no_benchmark(tm
         encoding="utf-8",
     )
     result = resolve_result({"run_directory": str(tmp_path)})
-    assert result["benchmark_label"] == "Buy and hold"
-    assert result["report"]["notes"]["benchmark_source"] == "price bars"
+    assert result["benchmark_label"] == "Buy & hold"
+    assert result["report"]["notes"]["benchmark_source"] == "Buy & hold, fees included: one entry + one exit"
     assert _row(result["report"], "return")["benchmark"] == pytest.approx(-0.1)
+    assert _row(result["report"], "trades")["benchmark"] == 1
+    assert _row(result["report"], "exposure")["benchmark"] == pytest.approx(1)

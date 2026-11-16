@@ -153,6 +153,13 @@ def _codes(backtest: dict[str, Any]) -> list[str]:
     return []
 
 
+def _normalize_source(value: str) -> str:
+    key = " ".join(value.strip().lower().replace("_", " ").split())
+    if key in {"yfinance", "yahoo", "yahoo finance", "yahoo! finance"}:
+        return "Yahoo Finance (yfinance)"
+    return value.strip()
+
+
 def _sources(card: dict[str, Any], backtest: dict[str, Any]) -> list[str]:
     raw = card.get("data_sources")
     if isinstance(raw, str) and raw.strip():
@@ -163,7 +170,7 @@ def _sources(card: dict[str, Any], backtest: dict[str, Any]) -> list[str]:
         sources = []
     if not sources and backtest.get("source"):
         sources = [str(backtest["source"])]
-    return sources
+    return [_normalize_source(item) for item in sources]
 
 
 def strategy_source(code: dict[str, Any] | str | None) -> str:
@@ -239,10 +246,8 @@ def _with_report(
     result["report"] = build_report(result, fills, benchmark, benchmark_fills)
     row = next((item for item in result["report"]["comparison"] if item["id"] == "return"), None)
     if row is not None and row.get("benchmark") is not None:
-        if not result.get("benchmark_label"):
-            result["benchmark_label"] = "Buy and hold"
-        if result["metrics"].get("benchmark_return") is None:
-            result["metrics"]["benchmark_return"] = row["benchmark"]
+        result["benchmark_label"] = "Buy & hold"
+        result["metrics"]["benchmark_return"] = row["benchmark"]
     return result
 
 

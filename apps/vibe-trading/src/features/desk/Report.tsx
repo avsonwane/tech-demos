@@ -125,9 +125,21 @@ export function ReportView({ report, strategy, benchmark }: { report: DeskReport
                   <tr key={year.year} className="border-t border-foreground/10">
                     <th className="py-2 pr-2 text-left font-medium">{year.year}</th>
                     {year.months.map((value, index) => {
-                      const painted = value == null ? "plain" : value > 0 ? "gain" : value < 0 ? "loss" : "plain"
+                      const mark = year.marks?.[index]
+                      const warmup = mark === "warmup"
+                      const painted = warmup || value == null ? "plain" : value > 0 ? "gain" : value < 0 ? "loss" : "plain"
+                      const title =
+                        mark === "warmup"
+                          ? "Warmup: flat before the first equity bar"
+                          : mark === "capital"
+                            ? "Measured from starting capital. The previous month has no bar."
+                            : undefined
                       return (
-                        <td key={MONTHS[index]} className={`px-1 py-2 text-center ${toneClass(painted)}`}>
+                        <td
+                          key={MONTHS[index]}
+                          title={title}
+                          className={`px-1 py-2 text-center ${warmup ? "text-muted-foreground" : toneClass(painted)}`}
+                        >
                           {value == null ? "—" : formatStat(value, "percent", true)}
                         </td>
                       )
@@ -138,7 +150,8 @@ export function ReportView({ report, strategy, benchmark }: { report: DeskReport
             </tbody>
           </table>
           <p className="mt-2 text-xs text-muted-foreground">
-            A month is filled only when that month and the previous month both have an equity bar.
+            A month before the first equity bar is warmup and shows 0.00%. The first month with bars is measured from
+            starting capital when the previous month has none. Later months need the previous month as well.
           </p>
         </div>
 
@@ -248,7 +261,8 @@ export function ReportView({ report, strategy, benchmark }: { report: DeskReport
                 {notes.starting_capital != null ? ". Returns, CAGR, and max drawdown use this as the base." : ""}
               </p>
               <p>Fee model: {notes.fee_model ?? "—"}</p>
-              {notes.benchmark_source ? <p>Benchmark source: {notes.benchmark_source}</p> : null}
+              {notes.benchmark_detail ? <p>{notes.benchmark_detail}</p> : notes.benchmark_source ? <p>Benchmark: {notes.benchmark_source}</p> : null}
+              {notes.recorded_benchmark ? <p>{notes.recorded_benchmark}</p> : null}
               <p>Fees: {formatStat(notes.fees, "money", false)}</p>
               {notes.sharpe_note ? <p>{notes.sharpe_note}</p> : null}
               <p>Fees / PnL divides fill fees by closed-trade PnL. Those columns are not rescaled.</p>

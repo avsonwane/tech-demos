@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+import pytest
+
 from results import resolve_result
 
 FIXTURE = Path(__file__).resolve().parents[1] / "fixtures" / "reliance_sma"
@@ -42,10 +44,10 @@ def test_nested_sma_is_the_headline_and_buy_and_hold_is_the_benchmark():
     parent_code = {"signal_engine.py": (FIXTURE / "code" / "signal_engine.py").read_text(encoding="utf-8")}
     result = resolve_result(_parent_payload(), parent_code)
     assert result["strategy_label"] == "20/50 SMA"
-    assert result["benchmark_label"] == "Buy and hold"
+    assert result["benchmark_label"] == "Buy & hold"
     assert result["run_id"] == "20261115_125847_46_bb8d5a"
     assert result["codes"] == ["RELIANCE.NS"]
-    assert result["sources"] == ["yfinance"]
+    assert result["sources"] == ["Yahoo Finance (yfinance)"]
     assert result["start_date"] == "2024-01-01"
     assert result["end_date"] == "2024-12-31"
     assert result["metrics"]["total_return"] == 0.116
@@ -54,12 +56,12 @@ def test_nested_sma_is_the_headline_and_buy_and_hold_is_the_benchmark():
     assert result["metrics"]["max_drawdown"] == -0.0959
     assert result["metrics"]["fees"] == 7355
     assert result["metrics"]["fees_reported"] is True
-    assert result["metrics"]["benchmark_return"] == -0.0604
+    assert result["metrics"]["benchmark_return"] == pytest.approx(-0.0713544263228375)
     assert result["metrics"]["fees"] != 99
     assert len(result["trades"]) == 3
     assert result["equity"][-1]["equity"] == 111.6
-    assert result["equity"][-1]["benchmark"] == 93.96
-    assert result["equity"][0]["benchmark"] == 100
+    assert result["equity"][-1]["benchmark"] == pytest.approx(92.86455736771624)
+    assert result["equity"][0]["benchmark"] == pytest.approx(100.08887628832035)
     assert "rolling(20)" in result["code"]
     assert "rolling(50)" in result["code"]
     assert "Buy and hold" not in result["code"]
