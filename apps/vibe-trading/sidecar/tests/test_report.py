@@ -180,8 +180,10 @@ def test_daily_flat_layout_matches_the_card_and_keeps_the_benchmark():
     assert _row(report, "cagr")["strategy"] == pytest.approx(result["metrics"]["cagr"], abs=1e-4)
     assert _row(report, "max_drawdown")["strategy"] == pytest.approx(result["metrics"]["max_drawdown"], abs=1e-4)
     assert result["strategy_label"] == "20/50 SMA"
+    assert result["strategy_warning"] is None
     assert result["benchmark_label"] == "Buy & hold"
     assert report["notes"]["benchmark_source"] == "Buy & hold, fees included: one entry + one exit"
+    assert "artifacts/ohlcv_RELIANCE.NS.csv" in report["notes"]["benchmark_detail"]
     assert report["monthly"][0]["marks"][0] == "capital"
     assert report["monthly"][0]["months"][0] is not None
     assert _row(report, "trades")["benchmark"] == 1
@@ -225,12 +227,13 @@ def test_prompt_names_a_root_strategy_when_the_code_does_not(tmp_path: Path):
 
 def test_a_benchmark_folder_does_not_change_the_computed_buy_and_hold(tmp_path: Path):
     """The same closes, capital, and costs produce one figure with or without a bh/ run."""
-    bars = (DAILY / "artifacts" / "bars.csv").read_text(encoding="utf-8")
+    bars = (DAILY / "artifacts" / "ohlcv_RELIANCE.NS.csv").read_text(encoding="utf-8")
     for name in ("flat", "nested"):
         root = tmp_path / name
         artifacts = root / "artifacts"
         artifacts.mkdir(parents=True)
-        (artifacts / "bars.csv").write_text(bars, encoding="utf-8")
+        filename = "ohlcv_RELIANCE.NS.csv" if name == "nested" else "bars.csv"
+        (artifacts / filename).write_text(bars, encoding="utf-8")
         (artifacts / "equity.csv").write_text(
             "timestamp,equity,drawdown\n2024-01-02,1000000,0\n2024-12-31,1100000,0\n",
             encoding="utf-8",
@@ -304,6 +307,124 @@ def test_months_before_the_first_equity_bar_are_warmup():
     assert year["marks"][1] == "warmup"
     assert year["marks"][2] == "capital"
     assert year["months"][2] is not None
+
+
+def test_ohlcv_ticker_file_matches_bars_csv(tmp_path: Path):
+    """The live artifact name and bars.csv are the same closes."""
+    text = (DAILY / "artifacts" / "ohlcv_RELIANCE.NS.csv").read_text(encoding="utf-8")
+    card = {
+        "data_sources": ["yfinance"],
+        "backtest": {
+            "codes": ["RELIANCE.NS"],
+            "start_date": "2024-01-01",
+            "end_date": "2024-12-31",
+            "initial_cash": 1_000_000,
+            "engine": "india_equity",
+        },
+    }
+    returns = []
+    for name in ("ohlcv_RELIANCE.NS.csv", "bars.csv"):
+        root = tmp_path / name
+        artifacts = root / "artifacts"
+        artifacts.mkdir(parents=True)
+        (artifacts / name).write_text(text, encoding="utf-8")
+        (artifacts / "equity.csv").write_text(
+            "timestamp,equity,drawdown\n2024-01-02,1000000,0\n2024-12-31,1100000,0\n",
+            encoding="utf-8",
+        )
+        (root / "run_card.json").write_text(json.dumps(card), encoding="utf-8")
+        result = resolve_result({"run_directory": str(root)})
+        returns.append(_row(result["report"], "return")["benchmark"])
+        assert result["price_bar_source"] == f"artifacts/{name}"
+    assert returns[0] == pytest.approx(returns[1])
+    assert returns[0] == pytest.approx(-0.0713544263228375)
+
+
+def test_compact_trade_date_ohlcv_is_a_price_file(tmp_path: Path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "ohlcv_TEST.csv").write_text(
+        "trade_date,open,high,low,close,volume\n20240102,100,101,99,100,1\n20240103,90,91,89,90,1\n",
+        encoding="utf-8",
+    )
+    (artifacts / "equity.csv").write_text(
+        "timestamp,equity,drawdown\n2024-01-02,1000,0\n2024-01-03,1100,0\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "run_card.json").write_text(
+        '{"backtest": {"initial_cash": 1000, "codes": ["TEST"], "start_date": "2024-01-02", "end_date": "2024-01-03"}}',
+        encoding="utf-8",
+    )
+    result = resolve_result({"run_directory": str(tmp_path)})
+    assert result["price_bar_source"] == "artifacts/ohlcv_TEST.csv"
+    assert _row(result["report"], "return")["benchmark"] == pytest.approx(-0.1)
+
+
+def test_missing_ohlcv_fetches_yahoo_bars(tmp_path: Path, monkeypatch):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "equity.csv").write_text(
+        "timestamp,equity,drawdown,benchmark_equity\n2024-01-02,1000,0,1000\n2024-01-03,1100,0,900\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "run_card.json").write_text(
+        json.dumps(
+            {
+                "data_sources": ["yahoo"],
+                "backtest": {
+                    "codes": ["AAPL"],
+                    "start_date": "2024-01-02",
+                    "end_date": "2024-01-03",
+                    "initial_cash": 1000,
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    seen = {}
+
+    def fake_fetch(symbol, start, end):
+        seen["symbol"] = symbol
+        seen["start"] = start
+        seen["end"] = end
+        return [{"time": "2024-01-02", "close": 100}, {"time": "2024-01-03", "close": 80}]
+
+    monkeypatch.setattr("results.fetch_yahoo_bars", fake_fetch)
+    result = resolve_result({"run_directory": str(tmp_path)})
+    assert seen == {"symbol": "AAPL", "start": "2024-01-02", "end": "2024-01-03"}
+    assert "Yahoo Finance (yfinance)" in result["price_bar_source"]
+    assert _row(result["report"], "return")["benchmark"] == pytest.approx(-0.2)
+    assert "price-only" in result["report"]["notes"]["recorded_benchmark"]
+
+
+def test_constant_signal_is_not_titled_from_the_prompt(tmp_path: Path):
+    artifacts = tmp_path / "artifacts"
+    artifacts.mkdir()
+    (artifacts / "equity.csv").write_text(
+        "timestamp,equity,drawdown\n2024-01-02,100,0\n2024-06-01,90,0\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "code").mkdir()
+    (tmp_path / "code" / "signal_engine.py").write_text(
+        "import pandas as pd\n\n"
+        "class SignalEngine:\n"
+        "    def generate(self, data):\n"
+        "        return pd.Series(1.0, index=data.index)\n",
+        encoding="utf-8",
+    )
+    (tmp_path / "run_card.json").write_text("{}", encoding="utf-8")
+    result = resolve_result(
+        {
+            "run_directory": str(tmp_path),
+            "prompt": "Backtest a 20/50 SMA crossover on RELIANCE.NS",
+        }
+    )
+    assert result["strategy_label"] == "Always long"
+    assert result["strategy_label"] != "20/50 SMA"
+    assert "constant (always long)" in result["strategy_warning"]
+    assert "20/50 SMA" in result["strategy_warning"]
+    assert result["report"]["notes"]["strategy_warning"] == result["strategy_warning"]
+    assert result["strategy_warning"] in result["report"]["markdown"]
 
 
 def test_price_bars_supply_buy_and_hold_when_the_equity_file_has_no_benchmark(tmp_path: Path):

@@ -136,3 +136,87 @@ def test_missing_code_endpoint_does_not_fail_the_run():
     assert events[-1][1]["code"] == ""
     assert events[-1][1]["sources"] == ["okx"]
     assert events[-1][1]["codes"] == ["BTC-USDT"]
+
+
+_CONSTANT = (
+    "import pandas as pd\n\n"
+    "class SignalEngine:\n"
+    "    def generate(self, data):\n"
+    "        return pd.Series(1.0, index=data.index)\n"
+)
+_VARYING = (
+    "class SignalEngine:\n"
+    "    def generate(self, data):\n"
+    "        fast = data['close'].rolling(20).mean()\n"
+    "        slow = data['close'].rolling(50).mean()\n"
+    "        return (fast > slow).astype(float)\n"
+)
+
+
+def _retry_client(codes: dict[str, str]):
+    messages: list[str] = []
+    streams = {"n": 0}
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        if request.method == "POST" and request.url.path == "/sessions":
+            return httpx.Response(
+                200,
+                json={"session_id": "sess-r", "title": "t", "status": "idle", "created_at": "t", "updated_at": "t"},
+            )
+        if request.url.path == "/sessions/sess-r/messages":
+            messages.append(json.loads(request.content)["content"])
+            return httpx.Response(200, json={"message_id": "m"})
+        if request.url.path == "/sessions/sess-r/events":
+            streams["n"] += 1
+            run_id = "run-a" if streams["n"] == 1 else "run-b"
+            stream = _sse(("attempt.completed", {"run_dir": f"/runs/{run_id}", "status": "completed"}))
+            return httpx.Response(200, content=stream)
+        if request.url.path in {"/runs/run-a", "/runs/run-b"}:
+            return httpx.Response(
+                200,
+                json={
+                    "run_id": request.url.path.rsplit("/", 1)[-1],
+                    "status": "success",
+                    "metrics": {"total_return": 0.01, "annual_return": 0.01, "sharpe": 0.2, "max_drawdown": -0.01, "win_rate": 0},
+                    "run_card": {"data_sources": ["yahoo"], "backtest": {"codes": ["AAPL"]}},
+                    "artifacts_equity_csv": [
+                        {"timestamp": "2024-01-02", "equity": "100", "drawdown": "0"},
+                        {"timestamp": "2024-01-03", "equity": "101", "drawdown": "0"},
+                    ],
+                    "artifacts_trades_csv": [],
+                },
+            )
+        if request.url.path == "/runs/run-a/code":
+            return httpx.Response(200, json={"signal_engine.py": codes["first"]})
+        if request.url.path == "/runs/run-b/code":
+            return httpx.Response(200, json={"signal_engine.py": codes["second"]})
+        return httpx.Response(404)
+
+    client = VibeClient(
+        "http://vibe.test",
+        httpx.Client(transport=httpx.MockTransport(handler), base_url="http://vibe.test"),
+    )
+    return client, messages
+
+
+def test_drive_live_retries_a_constant_signal_once():
+    prompt = "Backtest a 20/50 SMA crossover on AAPL for 2024 vs buy-and-hold"
+    client, messages = _retry_client({"first": _CONSTANT, "second": _VARYING})
+    events = list(drive_live(client, prompt))
+    assert messages[0] == prompt
+    assert len(messages) == 2
+    assert "constant" in messages[1].lower()
+    result = events[-1][1]
+    assert result["strategy_label"] == "20/50 SMA"
+    assert result["strategy_warning"] is None
+    assert any(item[0] == "phase" and "one rewrite" in item[1]["body"] for item in events)
+
+
+def test_drive_live_keeps_the_warning_when_the_retry_stays_constant():
+    prompt = "Backtest a 20/50 SMA crossover on AAPL for 2024 vs buy-and-hold"
+    client, messages = _retry_client({"first": _CONSTANT, "second": _CONSTANT})
+    result = list(drive_live(client, prompt))[-1][1]
+    assert len(messages) == 2
+    assert result["strategy_label"] == "Always long"
+    assert "constant (always long)" in result["strategy_warning"]
+    assert "retried once" in result["strategy_warning"]

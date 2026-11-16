@@ -16,6 +16,12 @@ import httpx
 from events import TERMINAL_EVENTS, apply_event, empty_state, parse_sse
 from results import resolve_result
 
+_RETRY_PROMPT = (
+    "The signal_engine.py you wrote returns a constant series, so the book is always long or always flat. "
+    "The request was a rule that changes with the data. Rewrite code/signal_engine.py so the signal is not constant, "
+    "then run the backtest again."
+)
+
 SERVE_URL = "http://127.0.0.1:8899"
 
 
@@ -78,14 +84,17 @@ class VibeClient:
         return body if isinstance(body, dict) else {}
 
 
-def drive_live(client: VibeClient, prompt: str) -> Iterator[tuple[str, dict[str, Any]]]:
-    """Open the event stream, send the prompt, then load the finished run.
+def _stream_attempt(
+    client: VibeClient,
+    session_id: str,
+    content: str,
+    holder: dict[str, Any],
+) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Subscribe, send one message, and yield phase updates.
 
-    The stream is opened before the message is sent. ``replay=active`` only
-    replays a buffer while the attempt is still running, so the subscription
-    has to be in place first.
+    ``holder`` receives ``state`` and ``error`` when the attempt ends. The
+    stream is opened before the message so ``replay=active`` still has a buffer.
     """
-    session_id = client.create_session()
     events: queue.Queue[tuple[str, dict[str, Any]] | None] = queue.Queue()
     started = threading.Event()
     errors: list[BaseException] = []
@@ -109,7 +118,7 @@ def drive_live(client: VibeClient, prompt: str) -> Iterator[tuple[str, dict[str,
     if errors:
         raise errors[0]
 
-    client.send_message(session_id, prompt)
+    client.send_message(session_id, content)
     state = empty_state()
     while True:
         item = events.get()
@@ -120,11 +129,21 @@ def drive_live(client: VibeClient, prompt: str) -> Iterator[tuple[str, dict[str,
             yield "phase", phase
         if state["terminal"]:
             break
-    if errors and not state["terminal"]:
-        raise errors[0]
-    if state["error"]:
+    thread.join(timeout=5)
+    holder["state"] = state
+    holder["error"] = errors[0] if errors else None
+
+
+def _result_from_state(
+    client: VibeClient,
+    state: dict[str, Any],
+    prompt: str,
+    *,
+    retried: bool = False,
+) -> dict[str, Any]:
+    if state.get("error"):
         raise RuntimeError(str(state["error"]))
-    run_id = state["run_id"]
+    run_id = state.get("run_id")
     if not isinstance(run_id, str) or not run_id:
         raise RuntimeError("The session ended without a backtest run id.")
     payload = client.get_run(run_id)
@@ -132,4 +151,45 @@ def drive_live(client: VibeClient, prompt: str) -> Iterator[tuple[str, dict[str,
     if isinstance(payload, dict):
         payload = dict(payload)
         payload["prompt"] = prompt
-    yield "result", resolve_result(payload, code)
+    return resolve_result(payload, code, retried=retried)
+
+
+def drive_live(client: VibeClient, prompt: str) -> Iterator[tuple[str, dict[str, Any]]]:
+    """Open the event stream, send the prompt, then load the finished run.
+
+    A constant signal under a rule-based prompt is sent back once. The second
+    result is the one shown, including its warning when the signal stays constant.
+    """
+    session_id = client.create_session()
+    holder: dict[str, Any] = {}
+    yield from _stream_attempt(client, session_id, prompt, holder)
+    state = holder.get("state") or {}
+    if holder.get("error") and not state.get("terminal"):
+        raise holder["error"]
+    result = _result_from_state(client, state, prompt)
+    if result.get("strategy_warning"):
+        yield (
+            "phase",
+            {
+                "id": "code",
+                "title": "Code",
+                "status": "working",
+                "body": "The signal was constant. Asking for one rewrite.",
+            },
+        )
+        second: dict[str, Any] = {}
+        try:
+            yield from _stream_attempt(client, session_id, _RETRY_PROMPT, second)
+            follow = second.get("state") or {}
+            if second.get("error") and not follow.get("terminal"):
+                raise second["error"]
+            result = _result_from_state(client, follow, prompt, retried=True)
+        except Exception:
+            warning = str(result.get("strategy_warning") or "")
+            result["strategy_warning"] = (
+                f"{warning} Generation was retried once and did not finish."
+            ).strip()
+            notes = (result.get("report") or {}).get("notes")
+            if isinstance(notes, dict):
+                notes["strategy_warning"] = result["strategy_warning"]
+    yield "result", result

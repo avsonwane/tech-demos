@@ -92,7 +92,8 @@ class RunIn(BaseModel):
 
 
 def _sample(name: str = "") -> dict[str, Any]:
-    path = SIDECAR / ("sample_daily.json" if name == "daily" else "sample_run.json")
+    filename = {"daily": "sample_daily.json", "constant": "sample_constant.json"}.get(name, "sample_run.json")
+    path = SIDECAR / filename
     return json.loads(path.read_text(encoding="utf-8"))
 
 
@@ -103,6 +104,9 @@ def _replay_result(name: str = "") -> dict[str, Any]:
     if name == "daily":
         fixture = SIDECAR / "fixtures" / "reliance_daily"
         run_id = "reliance-daily"
+    elif name == "constant":
+        fixture = SIDECAR / "fixtures" / "reliance_constant"
+        run_id = "reliance-constant"
     else:
         fixture = SIDECAR / "fixtures" / "reliance_sma"
         run_id = "20261115_125847_46_bb8d5a"
@@ -284,7 +288,7 @@ def _prepare(body: RunIn) -> dict[str, Any]:
         reason = f"{spec['env']} is not set, so this is the shipped sample instead of a live session."
     else:
         reason = None
-    sample = body.sample if body.sample in {"", "reliance", "daily"} else ""
+    sample = body.sample if body.sample in {"", "reliance", "daily", "constant"} else ""
     return {
         "replay": replay,
         "reason": reason,

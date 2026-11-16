@@ -15,8 +15,10 @@ from __future__ import annotations
 
 import csv
 import json
+import logging
 import math
 import re
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 
@@ -234,6 +236,8 @@ def parse_run(
         "config": config,
         "backtest": backtest,
         "price_bars": price_bars,
+        "price_bar_source": None,
+        "strategy_warning": None,
     }
 
 
@@ -346,9 +350,89 @@ _SMA_PAIR = re.compile(r"(\d+)\s*/\s*(\d+)\s*(?:SMA|moving[- ]average)", re.IGNO
 _RUN_ID = re.compile(r"^\d{8}_\d+")
 
 
+_RULE_RE = re.compile(
+    r"\b(?:sma|ema|rsi|macd|crossover|cross-over|moving[- ]average|bollinger|breakout|"
+    r"momentum|mean[- ]reversion|donchian|stochastic|vwap)\b|\d+\s*/\s*\d+",
+    re.IGNORECASE,
+)
+_LONG_RE = re.compile(
+    r"pd\.Series\(\s*1(?:\.0+)?\s*(?:,|\))"
+    r"|np\.ones\s*\("
+    r"|np\.full\s*\([^)]*,\s*1(?:\.0+)?\s*\)"
+    r"|\*\s*0(?:\.0+)?\s*\+\s*1(?:\.0+)?\b"
+    r"|(?:^|\n)\s*return\s+1(?:\.0+)?\s*(?:\n|$)"
+    r"|\bsignal\s*=\s*1(?:\.0+)?\b"
+    r"|\bposition\s*=\s*1(?:\.0+)?\b",
+    re.IGNORECASE,
+)
+_FLAT_RE = re.compile(
+    r"pd\.Series\(\s*0(?:\.0+)?\s*(?:,|\))"
+    r"|np\.zeros\s*\("
+    r"|(?:^|\n)\s*return\s+0(?:\.0+)?\s*(?:\n|$)"
+    r"|\bsignal\s*=\s*0(?:\.0+)?\b"
+    r"|\bposition\s*=\s*0(?:\.0+)?\b",
+    re.IGNORECASE,
+)
+_DOCSTRING_RE = re.compile(r'"""[\s\S]*?"""|\'\'\'[\s\S]*?\'\'\'')
+_COMMENT_RE = re.compile(r"#.*")
+_LOGIC_RE = re.compile(r"rolling|ewm|\.shift\s*\(|\.diff\s*\(|\btalib\b|\bta\.", re.IGNORECASE)
+
+
+def _code_body(code: str) -> str:
+    """Drop docstrings and comments so a label is not taken from prose."""
+    return _COMMENT_RE.sub("", _DOCSTRING_RE.sub("", code or ""))
+
+
+def signal_stance(code: str) -> str | None:
+    """``long`` or ``flat`` when the signal is a constant, else None.
+
+    Indicator calls win. A file that only mentions a rule in a comment is
+    still constant when the signal itself is ``pd.Series(1.0)`` or ``0``.
+    """
+    body = _code_body(code)
+    if not body.strip() or _LOGIC_RE.search(body):
+        return None
+    if _LONG_RE.search(body):
+        return "long"
+    if _FLAT_RE.search(body):
+        return "flat"
+    return None
+
+
+def prompt_asks_for_a_rule(prompt: str) -> bool:
+    return bool(_RULE_RE.search(prompt or ""))
+
+
+def constant_signal_warning(code: str, prompt: str) -> str | None:
+    """Warn when a rule prompt came back as an always-long or always-flat signal."""
+    stance = signal_stance(code)
+    if stance is None or not prompt_asks_for_a_rule(prompt):
+        return None
+    pair = _SMA_PAIR.search(prompt or "")
+    if pair:
+        asked = f"a {pair.group(1)}/{pair.group(2)} SMA crossover"
+    else:
+        asked = "a rule-based strategy"
+    kind = "always long" if stance == "long" else "always flat"
+    return (
+        f"The generated signal is constant ({kind}). The prompt asked for {asked}, "
+        "and this run did not implement that rule."
+    )
+
+
 def strategy_label(path: Path, code: str, prompt: str = "", *, at_root: bool = False) -> str | None:
-    """Name the strategy from its code or, when the code does not say, from the prompt."""
-    windows = [int(match) for match in _ROLLING_RE.findall(code or "")]
+    """Name the strategy from its code or, when the code does not say, from the prompt.
+
+    A constant signal is not given the prompt's name. ``pd.Series(1.0)`` under a
+    20/50 SMA prompt stays "Always long".
+    """
+    body = _code_body(code)
+    stance = signal_stance(code)
+    if stance == "long":
+        return "Always long"
+    if stance == "flat":
+        return "Always flat"
+    windows = [int(match) for match in _ROLLING_RE.findall(body)]
     if len(windows) >= 2:
         fast, slow = sorted(windows[:2])
         return f"{fast}/{slow} SMA"
@@ -356,11 +440,20 @@ def strategy_label(path: Path, code: str, prompt: str = "", *, at_root: bool = F
     if pair:
         fast, slow = sorted((int(pair.group(1)), int(pair.group(2))))
         return f"{fast}/{slow} SMA"
-    if path.name.lower() == "sma" or re.search(r"\bsma\b", code or "", re.IGNORECASE):
+    if path.name.lower() == "sma" or re.search(r"\bsma\b", body, re.IGNORECASE):
         return "SMA"
     if at_root or _RUN_ID.match(path.name):
         return None
     return path.name
+
+
+def _name_strategy(parsed: dict[str, Any], path: Path, prompt: str, *, at_root: bool, retried: bool = False) -> None:
+    code = parsed.get("code") or ""
+    parsed["strategy_label"] = strategy_label(path, code, prompt, at_root=at_root)
+    warning = constant_signal_warning(code, prompt)
+    if warning and retried:
+        warning += " Generation was retried once and the signal was still constant."
+    parsed["strategy_warning"] = warning
 
 
 def _payload_from_dir(path: Path) -> dict[str, Any]:
@@ -390,6 +483,187 @@ def _read_json(path: Path) -> dict[str, Any]:
     return loaded if isinstance(loaded, dict) else {}
 
 
+_SKIP_CSV = {
+    "equity.csv",
+    "trades.csv",
+    "metrics.csv",
+    "positions.csv",
+    "target_positions.csv",
+    "fills.csv",
+    "orders.csv",
+    "validation.csv",
+}
+_NAMED_BARS = {"bars.csv": 1, "price_series.csv": 2, "prices.csv": 2, "ohlcv.csv": 2}
+_DATE_KEYS = ("trade_date", "timestamp", "time", "date", "datetime")
+_CLOSE_KEYS = ("close", "adj_close", "adj close")
+
+
+def _bar_day(value: Any) -> str | None:
+    text = str(value or "").strip()
+    if len(text) >= 8 and text[:8].isdigit():
+        try:
+            parsed = date(int(text[:4]), int(text[4:6]), int(text[6:8]))
+        except ValueError:
+            return None
+        return parsed.isoformat()
+    text = text.replace("/", "-")
+    try:
+        return date.fromisoformat(text[:10]).isoformat()
+    except ValueError:
+        return None
+
+
+def _close_cell(row: dict[str, Any]) -> Any:
+    folded = {str(key).strip().lower(): value for key, value in row.items()}
+    for key in _CLOSE_KEYS:
+        if folded.get(key) not in (None, ""):
+            return folded[key]
+    return None
+
+
+def _rows_look_like_bars(path: Path) -> bool:
+    try:
+        with path.open(newline="", encoding="utf-8") as handle:
+            header = next(csv.reader(handle), [])
+    except OSError:
+        return False
+    names = {item.strip().lower() for item in header}
+    return bool(names & set(_DATE_KEYS)) and bool(names & set(_CLOSE_KEYS))
+
+
+def _bar_rows(path: Path, codes: list[str]) -> list[dict[str, Any]]:
+    wanted = {item.upper() for item in codes}
+    file_code = path.stem[6:] if path.stem.lower().startswith("ohlcv_") else ""
+    rows: list[dict[str, Any]] = []
+    for raw in _read_csv(path):
+        row_code = str(raw.get("code") or raw.get("symbol") or file_code or "").strip()
+        if wanted and row_code and row_code.upper() not in wanted:
+            continue
+        day = None
+        for key in _DATE_KEYS:
+            if raw.get(key):
+                day = _bar_day(raw.get(key))
+                if day:
+                    break
+        close = _close_cell(raw)
+        if day is None or close in (None, ""):
+            continue
+        rows.append({"time": day, "close": close, "code": row_code})
+    deduped: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        deduped[row["time"]] = row
+    return [deduped[key] for key in sorted(deduped)]
+
+
+def _ranked_bar_files(artifacts: Path, codes: list[str]) -> list[Path]:
+    if not artifacts.is_dir():
+        return []
+    files = [
+        path
+        for path in artifacts.glob("*.csv")
+        if path.is_file() and path.name.lower() not in _SKIP_CSV
+    ]
+
+    def rank(path: Path) -> tuple[int, int, str]:
+        if path.stem.lower().startswith("ohlcv_"):
+            code = path.stem[6:]
+            match = 0 if any(code.upper() == item.upper() for item in codes) else 1
+            return (0, match, path.name.lower())
+        named = _NAMED_BARS.get(path.name.lower())
+        if named is not None:
+            return (named, 0, path.name.lower())
+        return (5, 0, path.name.lower())
+
+    chosen: list[Path] = []
+    for path in sorted(files, key=rank):
+        kind = rank(path)[0]
+        if kind == 5 and not _rows_look_like_bars(path):
+            continue
+        if kind <= 5:
+            chosen.append(path)
+    return chosen
+
+
+def load_price_bars(directory: Path, codes: list[str] | None = None) -> tuple[list[dict[str, Any]], str | None]:
+    """Read one close series from the run's artifacts.
+
+    Live Vibe-Trading 0.1.19 writes ``artifacts/ohlcv_<TICKER>.csv``
+    (``trade_date,open,high,low,close,volume``). ``bars.csv``,
+    ``price_series.csv``, and any other OHLCV csv in that folder are accepted.
+    The ticker named on the run wins when several files are present.
+    """
+    named = [str(item) for item in (codes or []) if str(item).strip()]
+    for path in _ranked_bar_files(directory / "artifacts", named):
+        rows = _bar_rows(path, named)
+        if len(rows) >= 2:
+            return rows, f"artifacts/{path.name}"
+    return [], None
+
+
+def fetch_yahoo_bars(symbol: str, start: str, end: str) -> list[dict[str, Any]]:
+    """Daily closes from Yahoo Finance for one ticker and an inclusive date range."""
+    import yfinance as yf
+
+    start_day = date.fromisoformat(str(start)[:10])
+    end_day = date.fromisoformat(str(end)[:10]) + timedelta(days=1)
+    frame = yf.Ticker(symbol).history(
+        start=start_day.isoformat(),
+        end=end_day.isoformat(),
+        interval="1d",
+        auto_adjust=False,
+    )
+    if frame is None or len(frame) == 0:
+        return []
+    rows: list[dict[str, Any]] = []
+    for stamp, row in frame.iterrows():
+        day = stamp.date().isoformat() if hasattr(stamp, "date") else str(stamp)[:10]
+        close = row["Close"] if "Close" in row else None
+        try:
+            value = float(close)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(value) or value <= 0:
+            continue
+        rows.append({"time": day, "close": value, "code": symbol})
+    return rows
+
+
+def _bar_symbol(parsed: dict[str, Any]) -> str | None:
+    codes = parsed.get("codes") or []
+    if codes:
+        return str(codes[0])
+    config = parsed.get("config") if isinstance(parsed.get("config"), dict) else {}
+    raw = config.get("codes") if isinstance(config, dict) else None
+    if isinstance(raw, str) and raw.strip():
+        return raw.strip()
+    if isinstance(raw, list) and raw:
+        return str(raw[0])
+    return None
+
+
+def ensure_price_bars(parsed: dict[str, Any]) -> None:
+    """Download closes when the run directory has no OHLCV file."""
+    if parsed.get("price_bars"):
+        return
+    symbol = _bar_symbol(parsed)
+    start = parsed.get("start_date")
+    end = parsed.get("end_date")
+    if not symbol or not start or not end:
+        return
+    try:
+        rows = fetch_yahoo_bars(symbol, str(start), str(end))
+    except Exception:
+        logging.getLogger("desk").warning("Yahoo bar fetch failed for %s", symbol, exc_info=True)
+        return
+    if len(rows) < 2:
+        return
+    parsed["price_bars"] = rows
+    parsed["price_bar_source"] = (
+        f"Yahoo Finance (yfinance) for {symbol} from {start} to {end}, "
+        "because the run artifacts had no OHLCV file"
+    )
+
+
 def _apply_files(parsed: dict[str, Any], directory: Path) -> None:
     """Pull starting capital, the fee schedule, and price bars off the run directory."""
     config = _read_json(directory / "config.json") or _read_json(directory / "code" / "config.json")
@@ -400,10 +674,16 @@ def _apply_files(parsed: dict[str, Any], directory: Path) -> None:
         cash = _cash_from_mapping(config)
         if cash is not None:
             parsed["initial_cash"] = cash
+        if not parsed.get("codes"):
+            parsed["codes"] = _codes(config)
+        if parsed.get("start_date") is None and config.get("start_date"):
+            parsed["start_date"] = config.get("start_date")
+            parsed["end_date"] = parsed.get("end_date") or config.get("end_date")
     if not parsed.get("price_bars"):
-        bars = _read_csv(directory / "artifacts" / "bars.csv")
+        bars, source = load_price_bars(directory, parsed.get("codes") or [])
         if bars:
             parsed["price_bars"] = bars
+            parsed["price_bar_source"] = source
 
 
 def _merge_run_payload(disk: dict[str, Any], payload: dict[str, Any]) -> dict[str, Any]:
@@ -433,14 +713,19 @@ def _overlay_benchmark(result: dict[str, Any], benchmark_equity: list[dict[str, 
             point["benchmark"] = match
 
 
-def resolve_result(payload: dict[str, Any], code: dict[str, Any] | str | None = None) -> dict[str, Any]:
+def resolve_result(
+    payload: dict[str, Any],
+    code: dict[str, Any] | str | None = None,
+    *,
+    retried: bool = False,
+) -> dict[str, Any]:
     """Use a nested strategy directory when the run root is the comparison."""
     prompt = payload.get("prompt") if isinstance(payload.get("prompt"), str) else ""
     directory = payload.get("run_directory") or payload.get("run_dir")
     root = Path(directory) if isinstance(directory, str) and directory else None
     if root is None or not root.is_dir():
         parsed = parse_run(payload, code)
-        parsed["strategy_label"] = strategy_label(Path("run"), parsed["code"], prompt, at_root=True)
+        _name_strategy(parsed, Path("run"), prompt, at_root=True, retried=retried)
         return _with_report(parsed)
     primary, benchmark = choose_strategy(root)
     if primary == root and benchmark is None:
@@ -448,11 +733,12 @@ def resolve_result(payload: dict[str, Any], code: dict[str, Any] | str | None = 
         source = _read_code(root) or strategy_source(code)
         parsed = parse_run(_merge_run_payload(_payload_from_dir(root), payload), source or code, fills=fills)
         _apply_files(parsed, root)
+        ensure_price_bars(parsed)
         if payload.get("run_id"):
             parsed["run_id"] = payload["run_id"]
         if payload.get("status"):
             parsed["status"] = payload["status"]
-        parsed["strategy_label"] = strategy_label(root, parsed["code"], prompt, at_root=True)
+        _name_strategy(parsed, root, prompt, at_root=True, retried=retried)
         return _with_report(parsed, fills)
     primary_code = _read_code(primary)
     if not primary_code and primary == root:
@@ -466,7 +752,8 @@ def resolve_result(payload: dict[str, Any], code: dict[str, Any] | str | None = 
     _apply_files(parsed, primary)
     if payload.get("run_id"):
         parsed["run_id"] = payload["run_id"]
-    parsed["strategy_label"] = strategy_label(primary, parsed["code"], prompt, at_root=primary == root)
+    ensure_price_bars(parsed)
+    _name_strategy(parsed, primary, prompt, at_root=primary == root, retried=retried)
     baseline = None
     benchmark_fills: list[dict[str, Any]] | None = None
     if benchmark is not None:

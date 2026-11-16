@@ -18,7 +18,13 @@ _MISSING = "—"
 
 
 def _day(value: Any) -> date | None:
-    text = str(value or "")[:10]
+    text = str(value or "").strip()
+    if len(text) >= 8 and text[:8].isdigit():
+        try:
+            return date(int(text[:4]), int(text[4:6]), int(text[6:8]))
+        except ValueError:
+            return None
+    text = text.replace("/", "-")[:10]
     if len(text) < 10:
         return None
     try:
@@ -765,6 +771,7 @@ def _notes(result: dict[str, Any], strategy: dict[str, Any], fills: list[dict[st
         "benchmark_source": result.get("benchmark_source"),
         "benchmark_detail": result.get("benchmark_detail"),
         "recorded_benchmark": result.get("recorded_benchmark"),
+        "strategy_warning": result.get("strategy_warning"),
     }
 
 
@@ -808,7 +815,11 @@ def _comparison(strategy: dict[str, Any], benchmark: dict[str, Any] | None) -> l
 def _markdown(result: dict[str, Any], report: dict[str, Any]) -> str:
     strategy_name = result.get("strategy_label") or "Strategy"
     benchmark_name = result.get("benchmark_label") or "Buy and hold"
-    lines = [f"# {strategy_name}", "", report["summary"], "", "## Strategy vs benchmark", "", f"| Metric | {strategy_name} | {benchmark_name} |", "| --- | --- | --- |"]
+    lines = [f"# {strategy_name}", ""]
+    warning = result.get("strategy_warning")
+    if isinstance(warning, str) and warning.strip():
+        lines.extend([warning.strip(), ""])
+    lines.extend([report["summary"], "", "## Strategy vs benchmark", "", f"| Metric | {strategy_name} | {benchmark_name} |", "| --- | --- | --- |"])
     for row in report["comparison"]:
         lines.append(
             f"| {row['label']} | {_format(row['strategy'], row['unit'], row['signed'])} | {_format(row['benchmark'], row['unit'], row['signed'])} |"
@@ -1080,6 +1091,9 @@ def compute_buy_hold(result: dict[str, Any]) -> dict[str, Any] | None:
         "Time in market is 100% of that window. "
         f"Costs: {costs}."
     )
+    origin = result.get("price_bar_source")
+    if isinstance(origin, str) and origin.strip():
+        note += f" Closes from {origin.strip()}."
     return {
         "equity": points,
         "trades": [

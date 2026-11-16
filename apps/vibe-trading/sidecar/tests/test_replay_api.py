@@ -117,6 +117,41 @@ def test_daily_sample_replay_uses_initial_cash_and_the_benchmark_column(monkeypa
     assert result["report"]["notes"]["frequency"] == "daily"
     report_return = next(row for row in result["report"]["comparison"] if row["id"] == "return")
     assert abs(report_return["strategy"] - result["metrics"]["total_return"]) < 0.0001
+    assert "artifacts/ohlcv_RELIANCE.NS.csv" in result["report"]["notes"]["benchmark_detail"]
+
+
+def test_constant_signal_sample_warns_and_uses_ohlcv(monkeypatch):
+    monkeypatch.setenv("VIBE_DESK_REPLAY_DELAY", "0")
+    client = TestClient(app)
+    response = client.post(
+        "/api/run",
+        json={
+            "prompt": "ignored",
+            "provider": "xai",
+            "mode": "replay",
+            "sample": "constant",
+        },
+    )
+    assert response.status_code == 200
+    result = None
+    for block in response.text.split("\n\n"):
+        event = "message"
+        data_line = ""
+        for line in block.splitlines():
+            if line.startswith("event:"):
+                event = line[6:].strip()
+            elif line.startswith("data:"):
+                data_line = line[5:].strip()
+        if event == "result" and data_line:
+            result = json.loads(data_line)
+    assert result is not None
+    assert result["strategy_label"] == "Always long"
+    assert "constant (always long)" in result["strategy_warning"]
+    assert "20/50 SMA" in result["strategy_warning"]
+    report_return = next(row for row in result["report"]["comparison"] if row["id"] == "return")
+    assert report_return["benchmark"] == pytest.approx(-0.0713544263228375)
+    assert "artifacts/ohlcv_RELIANCE.NS.csv" in result["report"]["notes"]["benchmark_detail"]
+    assert result["sources"] == ["Yahoo Finance (yfinance)"]
 
 
 def test_auto_without_a_key_replays(monkeypatch):

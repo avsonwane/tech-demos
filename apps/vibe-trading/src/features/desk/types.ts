@@ -111,6 +111,7 @@ export type ReportNotes = {
   benchmark_source: string | null
   benchmark_detail: string | null
   recorded_benchmark: string | null
+  strategy_warning: string | null
 }
 
 export type DeskReport = {
@@ -128,6 +129,7 @@ export type DeskResult = {
   run_id: string | null
   status: string | null
   strategy_label: string | null
+  strategy_warning: string | null
   benchmark_label: string | null
   codes: string[]
   start_date: string | null

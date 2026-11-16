@@ -59,6 +59,11 @@ export function Results({ result, model }: { result: DeskResult; model?: string 
           </div>
         </CardHeader>
         <CardContent className="grid gap-2 text-sm">
+          {result.strategy_warning ? (
+            <p className="border border-[var(--amber)] bg-[var(--amber-bg)] px-3 py-2 text-[var(--amber)]" role="status">
+              {result.strategy_warning}
+            </p>
+          ) : null}
           <p>
             {names}
             {range ? ` · ${range}` : ""}

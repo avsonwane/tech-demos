@@ -224,6 +224,9 @@ export function DeskApp() {
             <Button type="button" variant="outline" disabled={running || !health} onClick={() => void start("replay", "daily")}>
               Daily sample
             </Button>
+            <Button type="button" variant="outline" disabled={running || !health} onClick={() => void start("replay", "constant")}>
+              Constant signal
+            </Button>
             {provider && !provider.key_set ? (
               <p className="text-sm text-muted-foreground">{provider.env} is not set. Run plays the sample.</p>
             ) : null}

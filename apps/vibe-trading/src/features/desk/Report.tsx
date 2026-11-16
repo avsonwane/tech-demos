@@ -52,6 +52,11 @@ export function ReportView({ report, strategy, benchmark }: { report: DeskReport
         <CardTitle>Report</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-8">
+        {notes.strategy_warning ? (
+          <p className="border border-[var(--amber)] bg-[var(--amber-bg)] px-3 py-2 text-sm text-[var(--amber)]" role="status">
+            {notes.strategy_warning}
+          </p>
+        ) : null}
         <p className="text-sm leading-relaxed">{report.summary}</p>
         <div className="flex flex-wrap gap-2">
           <Button type="button" variant="outline" size="sm" onClick={() => saveFile("vibe-report.md", report.markdown, "text/markdown")}>
@@ -263,6 +268,7 @@ export function ReportView({ report, strategy, benchmark }: { report: DeskReport
               <p>Fee model: {notes.fee_model ?? "—"}</p>
               {notes.benchmark_detail ? <p>{notes.benchmark_detail}</p> : notes.benchmark_source ? <p>Benchmark: {notes.benchmark_source}</p> : null}
               {notes.recorded_benchmark ? <p>{notes.recorded_benchmark}</p> : null}
+              {notes.strategy_warning ? <p>{notes.strategy_warning}</p> : null}
               <p>Fees: {formatStat(notes.fees, "money", false)}</p>
               {notes.sharpe_note ? <p>{notes.sharpe_note}</p> : null}
               <p>Fees / PnL divides fill fees by closed-trade PnL. Those columns are not rescaled.</p>
