@@ -772,6 +772,7 @@ def _notes(result: dict[str, Any], strategy: dict[str, Any], fills: list[dict[st
         "benchmark_detail": result.get("benchmark_detail"),
         "recorded_benchmark": result.get("recorded_benchmark"),
         "strategy_warning": result.get("strategy_warning"),
+        "hold_window": result.get("hold_window"),
     }
 
 
@@ -879,6 +880,7 @@ def _markdown(result: dict[str, Any], report: dict[str, Any]) -> str:
             f"- Warmup: {_MISSING if notes['warmup'] is None else notes['warmup']}",
             f"- Starting capital: {_money(notes['starting_capital'], False)}",
             f"- Fee model: {_MISSING if notes['fee_model'] is None else notes['fee_model']}",
+            f"- Buy-and-hold window: {notes.get('hold_window') or _MISSING}",
             f"- Benchmark: {notes.get('benchmark_detail') or notes['benchmark_source'] or _MISSING}",
             f"- Recorded benchmark: {notes.get('recorded_benchmark') or _MISSING}",
             f"- Fees: {_money(notes['fees'], False)}",
@@ -1025,26 +1027,54 @@ def _schedule_phrase(schedule: dict[str, float]) -> str:
     return ", ".join(parts)
 
 
+def _named_day(mapping: Any, key: str) -> date | None:
+    if not isinstance(mapping, dict):
+        return None
+    return _day(mapping.get(key))
+
+
+def _hold_bounds(result: dict[str, Any]) -> tuple[date | None, date | None]:
+    """Evaluation window for buy-and-hold, never the warmup fetch start.
+
+    Start is ``evaluation_start_date`` when the run recorded one, otherwise
+    the first equity bar, otherwise the requested backtest start. End is the
+    last equity bar, otherwise the requested end. ``start_date`` is the date
+    the model fetched, which includes warmup and differs across models.
+    """
+    config = result.get("config") if isinstance(result.get("config"), dict) else {}
+    backtest = result.get("backtest") if isinstance(result.get("backtest"), dict) else {}
+    evaluation = _named_day(config, "evaluation_start_date") or _named_day(backtest, "evaluation_start_date")
+    equity = _sorted_equity(result.get("equity") or [])
+    first_equity = _day(equity[0].get("time")) if equity else None
+    last_equity = _day(equity[-1].get("time")) if equity else None
+    if evaluation is not None:
+        start = evaluation
+    elif first_equity is not None:
+        start = first_equity
+    else:
+        start = _day(result.get("start_date"))
+    end = last_equity or _day(result.get("end_date"))
+    return start, end
+
+
 def compute_buy_hold(result: dict[str, Any]) -> dict[str, Any] | None:
     """One buy-and-hold from the run's closes, initial capital, and fee schedule.
 
-    Entry is the first close on or after the requested start, which is the
-    first tradable bar after warmup when the price file begins at the
-    evaluation window. Exit is the last close on or before the requested end.
-    Slippage and fees are charged once on the way in and once on the way out.
+    Entry is the first close on or after the strategy evaluation start.
+    Exit is the last close on or before the last equity bar. Slippage and
+    fees are charged once on the way in and once on the way out.
     """
     closes = _close_series(result.get("price_bars") or [])
     if len(closes) < 2:
         return None
-    start = _day(result.get("start_date"))
-    end = _day(result.get("end_date"))
+    start, end = _hold_bounds(result)
     window = [
         item
         for item in closes
         if (start is None or item[0] >= start) and (end is None or item[0] <= end)
     ]
     if len(window) < 2:
-        window = closes
+        return None
     capital = _positive(result.get("initial_cash"))
     if capital is None:
         equity = _sorted_equity(result.get("equity") or [])
@@ -1085,9 +1115,12 @@ def compute_buy_hold(result: dict[str, Any]) -> dict[str, Any] | None:
             equity = cash + shares * close
         points.append({"time": day.isoformat(), "equity": equity, "drawdown": None})
     pnl = (shares * exit_px - exit_fee) - (shares * entry_px + entry_fee)
+    hold_window = f"{entry_day.isoformat()} through {exit_day.isoformat()}"
     note = (
-        f"{_BH_LABEL}. Held from {entry_day.isoformat()} through {exit_day.isoformat()}, "
-        "the first price bar on or after the requested start through the last bar. "
+        f"{_BH_LABEL}. Buy-and-hold window: {hold_window}. "
+        "That is the strategy evaluation window, from the first close on or after "
+        "evaluation_start_date (or the first equity bar when that date is absent) "
+        "through the last equity bar. The warmup fetch start is not used. "
         "Time in market is 100% of that window. "
         f"Costs: {costs}."
     )
@@ -1124,6 +1157,7 @@ def compute_buy_hold(result: dict[str, Any]) -> dict[str, Any] | None:
         "initial_cash": capital,
         "bars_per_year": result.get("bars_per_year"),
         "note": note,
+        "hold_window": hold_window,
     }
 
 
@@ -1194,12 +1228,14 @@ def build_report(
     computed = compute_buy_hold(result)
     column = _benchmark_points(result.get("equity") or [], "benchmark")
     detail = None
+    noted_hold = None
     if computed is not None:
         other = _side(computed, computed["fills"])
         source = _BH_LABEL
         detail = computed["note"]
         _overlay_curve(result, computed["equity"])
         recorded = _recorded_benchmark(benchmark, column)
+        noted_hold = computed.get("hold_window")
     elif benchmark is not None:
         other = _side(benchmark, [row for row in (benchmark_fills or []) if isinstance(row, dict)])
         source = "Vibe-Trading buy-and-hold run. Price bars were not available, so this column is that run."
@@ -1219,6 +1255,7 @@ def build_report(
     noted["benchmark_source"] = source
     noted["benchmark_detail"] = detail
     noted["recorded_benchmark"] = recorded
+    noted["hold_window"] = noted_hold if computed is not None else None
     report = {
         "summary": _summary(result, strategy, other),
         "comparison": _comparison(strategy, other),

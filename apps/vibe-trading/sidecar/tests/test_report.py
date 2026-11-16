@@ -41,19 +41,19 @@ def _reliance():
 
 def test_reliance_report_uses_only_the_fixture_files():
     report = _reliance()["report"]
-    assert "18.74 percentage points" in report["summary"]
+    assert "17.83 percentage points" in report["summary"]
     assert "flat from 2024-07-01 until the next entry on 2024-09-01" in report["summary"]
     assert "still open" in report["summary"]
     assert "Aug 14" not in report["summary"]
 
     assert _row(report, "return")["strategy"] == pytest.approx(0.116)
-    assert _row(report, "return")["benchmark"] == pytest.approx(-0.0713544263228375)
+    assert _row(report, "return")["benchmark"] == pytest.approx(-0.06230164402283045)
     assert _row(report, "sharpe")["strategy"] == 0.8
-    assert _row(report, "sharpe")["benchmark"] == pytest.approx(-2.527448435519075)
+    assert _row(report, "sharpe")["benchmark"] == pytest.approx(-0.16427768677875415)
     assert _row(report, "sortino")["strategy"] is None
     assert _row(report, "volatility")["strategy"] is None
     assert _row(report, "max_drawdown")["strategy"] == -0.0959
-    assert _row(report, "max_drawdown")["benchmark"] == pytest.approx(-0.0796555718763402)
+    assert _row(report, "max_drawdown")["benchmark"] == pytest.approx(-0.24455565396070122)
     assert _row(report, "win_rate")["strategy"] == 1
     assert _row(report, "win_rate")["benchmark"] == 0
     assert _row(report, "trades")["benchmark"] == 1
@@ -90,7 +90,7 @@ def test_reliance_report_uses_only_the_fixture_files():
     assert report["drawdowns"] == [
         {"start": "2024-06-03", "trough": "2024-12-31", "recovery": None, "depth": -0.0959}
     ]
-    assert report["notes"]["warmup"] == "2024-01-01 to 2024-01-02"
+    assert report["notes"]["warmup"] == "2023-09-01 to 2024-01-02"
     assert report["notes"]["frequency"] == "irregular"
     assert report["notes"]["fee_model"] is None
     assert report["notes"]["starting_capital"] == 100
@@ -98,7 +98,7 @@ def test_reliance_report_uses_only_the_fixture_files():
     assert report["notes"]["sources"] == ["Yahoo Finance (yfinance)"]
     assert "not recomputed" in report["notes"]["sharpe_note"]
     assert "—" in report["markdown"]
-    assert "18.74 percentage points" in report["markdown"]
+    assert "17.83 percentage points" in report["markdown"]
     assert report["notes"]["benchmark_source"] == "Buy & hold, fees included: one entry + one exit"
     assert "recorded a buy-and-hold run at -6.04%" in report["notes"]["recorded_benchmark"]
     assert "2024-03-01,2024-07-01,100,112,10,122,120,0.12,4500,closed" in report["trades_csv"]
@@ -176,7 +176,8 @@ def test_daily_flat_layout_matches_the_card_and_keeps_the_benchmark():
     assert card_return == pytest.approx(0.116, abs=1e-4)
     assert report_return == pytest.approx(card_return, abs=1e-4)
     assert report_benchmark == pytest.approx(result["metrics"]["benchmark_return"], abs=1e-4)
-    assert report_benchmark == pytest.approx(-0.0713544263228375)
+    assert report_benchmark == pytest.approx(-0.06230164402283045)
+    assert report["notes"]["hold_window"] == "2024-01-01 through 2024-12-31"
     assert _row(report, "cagr")["strategy"] == pytest.approx(result["metrics"]["cagr"], abs=1e-4)
     assert _row(report, "max_drawdown")["strategy"] == pytest.approx(result["metrics"]["max_drawdown"], abs=1e-4)
     assert result["strategy_label"] == "20/50 SMA"
@@ -272,7 +273,7 @@ def test_a_benchmark_folder_does_not_change_the_computed_buy_and_hold(tmp_path: 
     flat_return = _row(flat["report"], "return")["benchmark"]
     folder_return = _row(with_folder["report"], "return")["benchmark"]
     assert flat_return == pytest.approx(folder_return)
-    assert flat_return == pytest.approx(-0.0713544263228375)
+    assert flat_return == pytest.approx(-0.07000297218259455)
     assert "recorded a buy-and-hold run" in with_folder["report"]["notes"]["recorded_benchmark"]
     assert with_folder["report"]["notes"]["sources"] == ["Yahoo Finance (yfinance)"]
     assert flat["report"]["notes"]["sources"] == ["Yahoo Finance (yfinance)"]
@@ -309,6 +310,59 @@ def test_months_before_the_first_equity_bar_are_warmup():
     assert year["months"][2] is not None
 
 
+def test_two_warmup_starts_share_one_buy_and_hold(tmp_path: Path):
+    """A later or earlier fetch start does not move the evaluation window."""
+    text = (DAILY / "artifacts" / "ohlcv_RELIANCE.NS.csv").read_text(encoding="utf-8")
+    returns = []
+    windows = []
+    for warmup in ("2023-08-01", "2023-09-01"):
+        root = tmp_path / warmup
+        artifacts = root / "artifacts"
+        artifacts.mkdir(parents=True)
+        (artifacts / "ohlcv_RELIANCE.NS.csv").write_text(text, encoding="utf-8")
+        (artifacts / "equity.csv").write_text(
+            "timestamp,equity,drawdown\n2024-01-01,1000000,0\n2024-12-31,1116000,0\n",
+            encoding="utf-8",
+        )
+        (root / "config.json").write_text(
+            json.dumps(
+                {
+                    "initial_cash": 1_000_000,
+                    "start_date": warmup,
+                    "evaluation_start_date": "2024-01-01",
+                    "end_date": "2024-12-31",
+                    "codes": ["RELIANCE.NS"],
+                    "engine": "india_equity",
+                }
+            ),
+            encoding="utf-8",
+        )
+        (root / "run_card.json").write_text(
+            json.dumps(
+                {
+                    "backtest": {
+                        "codes": ["RELIANCE.NS"],
+                        "start_date": warmup,
+                        "evaluation_start_date": "2024-01-01",
+                        "end_date": "2024-12-31",
+                        "initial_cash": 1_000_000,
+                        "engine": "india_equity",
+                    }
+                }
+            ),
+            encoding="utf-8",
+        )
+        result = resolve_result({"run_directory": str(root)})
+        returns.append(_row(result["report"], "return")["benchmark"])
+        windows.append(result["report"]["notes"]["hold_window"])
+        assert warmup not in result["report"]["notes"]["benchmark_detail"].split("Buy-and-hold window:")[1][:40]
+    assert returns[0] == pytest.approx(returns[1])
+    assert windows == ["2024-01-01 through 2024-12-31", "2024-01-01 through 2024-12-31"]
+    assert "1279.69" not in windows[0]
+    daily = resolve_result({"run_directory": str(DAILY)})
+    assert returns[0] == pytest.approx(_row(daily["report"], "return")["benchmark"])
+
+
 def test_ohlcv_ticker_file_matches_bars_csv(tmp_path: Path):
     """The live artifact name and bars.csv are the same closes."""
     text = (DAILY / "artifacts" / "ohlcv_RELIANCE.NS.csv").read_text(encoding="utf-8")
@@ -337,7 +391,7 @@ def test_ohlcv_ticker_file_matches_bars_csv(tmp_path: Path):
         returns.append(_row(result["report"], "return")["benchmark"])
         assert result["price_bar_source"] == f"artifacts/{name}"
     assert returns[0] == pytest.approx(returns[1])
-    assert returns[0] == pytest.approx(-0.0713544263228375)
+    assert returns[0] == pytest.approx(-0.07000297218259455)
 
 
 def test_compact_trade_date_ohlcv_is_a_price_file(tmp_path: Path):

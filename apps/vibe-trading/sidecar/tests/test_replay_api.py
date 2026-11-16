@@ -73,14 +73,15 @@ def test_replay_stream_includes_phases_and_the_sample_result(monkeypatch):
     assert result["metrics"]["sharpe"] == 0.8
     assert result["metrics"]["max_drawdown"] == -0.0959
     assert result["metrics"]["fees"] == 7355
-    assert result["metrics"]["benchmark_return"] == pytest.approx(-0.0713544263228375)
-    assert result["equity"][0]["benchmark"] == pytest.approx(100.08887628832035)
+    assert result["metrics"]["benchmark_return"] == pytest.approx(-0.06230164402283045)
+    assert result["equity"][0]["benchmark"] == pytest.approx(100.60803121114883)
     assert result["equity"][-1]["equity"] == 111.6
-    assert result["equity"][-1]["benchmark"] == pytest.approx(92.86455736771624)
+    assert result["equity"][-1]["benchmark"] == pytest.approx(93.76983559771698)
     assert len(result["trades"]) == 3
     assert "rolling(20)" in result["code"]
     assert "Buy and hold" not in result["code"]
-    assert "18.74 percentage points" in result["report"]["summary"]
+    assert "17.83 percentage points" in result["report"]["summary"]
+    assert result["report"]["notes"]["hold_window"] == "2024-01-01 through 2024-12-31"
     assert result["report"]["notes"]["benchmark_source"] == "Buy & hold, fees included: one entry + one exit"
     assert result["report"]["comparison"][2]["strategy"] == 0.8
     assert result["report"]["round_trips"][0]["pnl"] == 120
@@ -149,7 +150,8 @@ def test_constant_signal_sample_warns_and_uses_ohlcv(monkeypatch):
     assert "constant (always long)" in result["strategy_warning"]
     assert "20/50 SMA" in result["strategy_warning"]
     report_return = next(row for row in result["report"]["comparison"] if row["id"] == "return")
-    assert report_return["benchmark"] == pytest.approx(-0.0713544263228375)
+    assert report_return["benchmark"] == pytest.approx(-0.06230164402283045)
+    assert result["report"]["notes"]["hold_window"] == "2024-01-01 through 2024-12-31"
     assert "artifacts/ohlcv_RELIANCE.NS.csv" in result["report"]["notes"]["benchmark_detail"]
     assert result["sources"] == ["Yahoo Finance (yfinance)"]
 

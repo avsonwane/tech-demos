@@ -601,7 +601,11 @@ def load_price_bars(directory: Path, codes: list[str] | None = None) -> tuple[li
 
 
 def fetch_yahoo_bars(symbol: str, start: str, end: str) -> list[dict[str, Any]]:
-    """Daily closes from Yahoo Finance for one ticker and an inclusive date range."""
+    """Daily adjusted closes from Yahoo Finance for one ticker and an inclusive date range.
+
+    Adjusted closes match the RELIANCE.NS series Vibe-Trading stores (about 1,279.69
+    on 2024-01-01 and 1,205.04 on 2024-12-31).
+    """
     import yfinance as yf
 
     start_day = date.fromisoformat(str(start)[:10])
@@ -610,7 +614,7 @@ def fetch_yahoo_bars(symbol: str, start: str, end: str) -> list[dict[str, Any]]:
         start=start_day.isoformat(),
         end=end_day.isoformat(),
         interval="1d",
-        auto_adjust=False,
+        auto_adjust=True,
     )
     if frame is None or len(frame) == 0:
         return []

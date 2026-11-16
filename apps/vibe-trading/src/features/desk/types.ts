@@ -112,6 +112,7 @@ export type ReportNotes = {
   benchmark_detail: string | null
   recorded_benchmark: string | null
   strategy_warning: string | null
+  hold_window: string | null
 }
 
 export type DeskReport = {

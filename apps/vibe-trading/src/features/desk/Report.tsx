@@ -266,6 +266,10 @@ export function ReportView({ report, strategy, benchmark }: { report: DeskReport
                 {notes.starting_capital != null ? ". Returns, CAGR, and max drawdown use this as the base." : ""}
               </p>
               <p>Fee model: {notes.fee_model ?? "—"}</p>
+              <p>
+                Buy-and-hold window: {notes.hold_window ?? "—"}. This is the strategy evaluation window, not the warmup
+                start.
+              </p>
               {notes.benchmark_detail ? <p>{notes.benchmark_detail}</p> : notes.benchmark_source ? <p>Benchmark: {notes.benchmark_source}</p> : null}
               {notes.recorded_benchmark ? <p>{notes.recorded_benchmark}</p> : null}
               {notes.strategy_warning ? <p>{notes.strategy_warning}</p> : null}

@@ -48,7 +48,7 @@ def test_nested_sma_is_the_headline_and_buy_and_hold_is_the_benchmark():
     assert result["run_id"] == "20261115_125847_46_bb8d5a"
     assert result["codes"] == ["RELIANCE.NS"]
     assert result["sources"] == ["Yahoo Finance (yfinance)"]
-    assert result["start_date"] == "2024-01-01"
+    assert result["start_date"] == "2023-09-01"
     assert result["end_date"] == "2024-12-31"
     assert result["metrics"]["total_return"] == 0.116
     assert result["metrics"]["cagr"] == 0.116
@@ -56,12 +56,12 @@ def test_nested_sma_is_the_headline_and_buy_and_hold_is_the_benchmark():
     assert result["metrics"]["max_drawdown"] == -0.0959
     assert result["metrics"]["fees"] == 7355
     assert result["metrics"]["fees_reported"] is True
-    assert result["metrics"]["benchmark_return"] == pytest.approx(-0.0713544263228375)
+    assert result["metrics"]["benchmark_return"] == pytest.approx(-0.06230164402283045)
     assert result["metrics"]["fees"] != 99
     assert len(result["trades"]) == 3
     assert result["equity"][-1]["equity"] == 111.6
-    assert result["equity"][-1]["benchmark"] == pytest.approx(92.86455736771624)
-    assert result["equity"][0]["benchmark"] == pytest.approx(100.08887628832035)
+    assert result["equity"][-1]["benchmark"] == pytest.approx(93.76983559771698)
+    assert result["equity"][0]["benchmark"] == pytest.approx(100.60803121114883)
     assert "rolling(20)" in result["code"]
     assert "rolling(50)" in result["code"]
     assert "Buy and hold" not in result["code"]

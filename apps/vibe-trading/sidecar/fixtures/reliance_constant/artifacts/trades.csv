@@ -1,3 +1,3 @@
 timestamp,code,side,price,qty,pnl,event
 2024-01-02,RELIANCE.NS,buy,2500,400,0,entry
-2024-12-31,RELIANCE.NS,sell,2350,400,-71354.43,exit
+2024-12-31,RELIANCE.NS,sell,1205.04,400,-62301.64,exit
