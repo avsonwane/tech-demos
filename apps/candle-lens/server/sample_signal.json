@@ -1,0 +1,27 @@
+{
+  "symbol": "BINANCE:HYPEUSDT.P",
+  "timeframe": "60",
+  "packet_time": "2026-11-13T09:00:00Z",
+  "decision": "LONG",
+  "confidence": 74,
+  "entry": 70.71,
+  "stop": 69.882,
+  "target_1": 71.952,
+  "target_2": 73.194,
+  "risk_reward_t2": 3.0,
+  "position_size_units": 12.07,
+  "risk_amount": 10.0,
+  "candle_read": "Three candles of steady higher closes, a bearish engulfing shakeout that held above the last swing low, then a bullish engulfing on 1.31x volume that closed in the top quarter of its range and above the last swing high.",
+  "reasons": [
+    "Regime TREND_UP with a rising 200 EMA and ADX 26.4",
+    "Long score 92 crossed the 70 threshold: trend, momentum, strength and 4h bias all maxed",
+    "Structure BREAK_UP above the 70.48 swing high on a bullish engulfing candle"
+  ],
+  "concerns": [
+    "Volume only 1.31x average, not a strong expansion",
+    "Previous day high at 74.20 sits above target 2 but price is still below it after a sharp selloff yesterday"
+  ],
+  "invalidation": "A 1h close back below 70.48 (the broken swing high) or a touch of the 69.882 stop",
+  "why_this_could_fail": "This could be a relief rally inside a larger daily pullback. If the 4h bias flips to DOWN, the breakout loses its higher-timeframe support.",
+  "next_check": "Re-evaluate on the next packet; move the stop to entry if target 1 is hit"
+}
