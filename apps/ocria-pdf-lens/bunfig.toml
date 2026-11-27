@@ -1,0 +1,6 @@
+[install]
+minimumReleaseAge = 259200
+# @llamaindex/liteparse-wasm@2.21.3 was published 2026-11-26, inside the 3-day
+# gate on the day this app was added. Only that exact version is exempt.
+# See PLAN.md and README.md.
+minimumReleaseAgeExcludes = ["@llamaindex/liteparse-wasm@2.21.3"]
